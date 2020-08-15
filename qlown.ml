@@ -85,7 +85,7 @@ and typeof_type (e : local) (t : term) =
 and assert_type (e : local) (t : term) =
   match typeof_type e t with None -> false | Some _ -> true
 
-let conv tr =
+let conv g d tr =
   let rec aux g d = function
     | Syntax.Var id -> Var (d - HashMap.find id g - 1)
     | Syntax.App ({ e = tr1; _ }, { e = tr2; _ }) ->
@@ -98,7 +98,7 @@ let conv tr =
         Lam (aux g d ty, aux (HashMap.add x d g) (d + 1) tr)
     | Syntax.Univ index -> Univ index
   in
-  aux HashMap.empty 0 tr
+  aux g d tr
 
 let rec read_eval_print ic =
   let lex = Lexing.from_channel ic in
@@ -108,7 +108,19 @@ let rec read_eval_print ic =
   ( try
       match Parser.toplevel Lexer.main lex with
       | { p = Syntax.LetDecl (id, { e = ty; _ }, { e = tr; _ }); _ } ->
-          if check_type [] (conv tr) (conv ty) then
+          let g =
+            [
+              (* False_ind : (P : Univ 0) -> False -> P *)
+              Decl (Prod (Univ 0, Prod (Var 1, Var 1)));
+              (* False : Univ 0 *)
+              Decl (Univ 0);
+            ]
+          in
+          let m = HashMap.empty in
+          let m = HashMap.add "False" 0 m in
+          let m = HashMap.add "False_ind" 1 m in
+          let conv = conv m (HashMap.cardinal m) in
+          if check_type g (conv tr) (conv ty) then
             Printf.printf "%s VERIFIED\n" id
           else Printf.printf "%s UNVERIFIED\n" id
     with Parser.Error ->
