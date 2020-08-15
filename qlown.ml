@@ -132,23 +132,3 @@ let rec read_eval_print ic =
 
 ;;
 read_eval_print stdin
-
-(*
-verify
-  (* Type: forall P: Univ 0, P --> P *)
-  (Prod (Univ 0, Prod (Var 0, Var 1)))
-  (* Term: fun P: Univ 0 -> fun x: P -> x *)
-  (Lam (Univ 0, Lam (Var 0, Var 0)))
-*)
-
-(*
-let id : (P : Univ 0) -> P -> P =
-    fun (P : Univ 0) -> fun (x : P) -> x
-;;
-
-P : (Q : Univ 0)
-
-fun (x: h) -> x -> piyo
-
-(P: Univ 0) ->
-*)
