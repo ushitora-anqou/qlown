@@ -1,0 +1,9 @@
+(menhir
+  (flags (--explain))
+  (modules parser)
+)
+(ocamllex
+  (modules lexer)
+)
+(executable
+ (name qlown))
