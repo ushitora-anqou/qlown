@@ -107,7 +107,7 @@ let rec read_eval_print ic =
     flush stdout );
   ( try
       match Parser.toplevel Lexer.main lex with
-      | { p = Syntax.LetDecl (id, { e = ty; _ }, { e = tr; _ }); _ } ->
+      | { p = Syntax.LetDecl (id, { e = ty; _ }, { e = tr; _ }); _ } -> (
           let g =
             [
               (* False_ind : (P : Univ 0) -> False -> P *)
@@ -120,9 +120,12 @@ let rec read_eval_print ic =
           let m = HashMap.add "False" 0 m in
           let m = HashMap.add "False_ind" 1 m in
           let conv = conv m (HashMap.cardinal m) in
-          if check_type g (conv tr) (conv ty) then
-            Printf.printf "%s VERIFIED\n" id
-          else Printf.printf "%s UNVERIFIED\n" id
+          try
+            if check_type g (conv tr) (conv ty) then
+              Printf.printf "%s VERIFIED\n" id
+            else failwith "type check failed"
+          with e ->
+            Printf.printf "%s UNVERIFIED (%s)\n" id @@ Printexc.to_string e )
     with Parser.Error ->
       let pos = Lexing.lexeme_start lex in
       Printf.printf
