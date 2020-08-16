@@ -2,7 +2,7 @@
 open Syntax
 %}
 
-%token LET FUN UNIV COLON LPAREN RPAREN RARROW EQ SEMISEMI EOF
+%token LET FUN UNIV ASSUME COLON LPAREN RPAREN RARROW EQ SEMISEMI EOF
 
 %token <int> INTV
 %token <string> ID
@@ -16,6 +16,11 @@ toplevel:
   | LET id=ID COLON typ=Expr tr=option(LetStmtDef) SEMISEMI {
       Some (match tr with
       | Some tr -> { p=LetDef (id, typ, tr); l=$symbolstartpos }
+      | None -> { p=LetDecl (id, typ); l=$symbolstartpos })
+  }
+  | ASSUME LET id=ID COLON typ=Expr tr=option(LetStmtDef) SEMISEMI {
+      Some (match tr with
+      | Some tr -> { p=AssumeLetDef (id, typ, tr); l=$symbolstartpos }
       | None -> { p=LetDecl (id, typ); l=$symbolstartpos })
   }
 

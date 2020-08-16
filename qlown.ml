@@ -124,6 +124,11 @@ let verify_one (lex : Lexing.lexbuf) (g : global) =
       if not (check_type g [] tr ty) then failwith "type check failed";
       Printf.printf "%s added (VERIFIED)\n" id;
       Some (HashMap.add id (Def (ty, tr)) g)
+  | Some { p = Syntax.AssumeLetDef (id, { e = ty; _ }, { e = tr; _ }); _ } ->
+      let tr = conv g tr in
+      let ty = conv g ty in
+      Printf.printf "%s added (without verification)\n" id;
+      Some (HashMap.add id (Def (ty, tr)) g)
 
 let rec verify_all (lex : Lexing.lexbuf) (g : global) =
   match verify_one lex g with None -> g | Some g -> verify_all lex g

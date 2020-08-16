@@ -4,6 +4,7 @@ let reservedWords = [
   ("let", Parser.LET);
   ("fun", Parser.FUN);
   ("Univ", Parser.UNIV);
+  ("assume", Parser.ASSUME);
 ]
 
 exception Error of int
