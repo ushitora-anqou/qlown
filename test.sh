@@ -28,6 +28,11 @@ test_positive "
     let f : (A : Univ 0) -> (x : A) -> (y : A) -> eq A x y -> eq A y x =
       fun (A : Univ 0) -> fun (x : A) -> fun (y : A) -> fun (e : eq A x y) ->
         eq_rec A x (fun (z : A) -> eq A z x) (eq_refl A x) y e;;
+    let f : (A : Univ 0) -> (x : A) -> (y : A) -> (z : A) ->
+            eq A x y -> eq A y z -> eq A x z =
+      fun (A : Univ 0) -> fun (x : A) -> fun (y : A) -> fun (z : A) ->
+      fun (e1 : eq A x y) -> fun (e2 : eq A y z) ->
+        eq_rec A y (fun (w : A) -> eq A x w) e1 z e2;;
 "
 
 function test_negative() {
@@ -49,3 +54,10 @@ test_negative \
 test_negative \
     "let f : (P : Univ 0) -> P -> (P -> False) -> False =
        fun (P : Univ 0) -> fun (x : P) -> fun (y : P -> False) -> x y;;"
+test_negative "
+    let f : (A : Univ 0) -> (x : A) -> (y : A) -> (z : A) ->
+            eq A x y -> eq A y z -> eq A x z =
+      fun (A : Univ 0) -> fun (x : A) -> fun (y : A) -> fun (z : A) ->
+      fun (e1 : eq A x y) -> fun (e2 : eq A y z) ->
+        eq_rec A y (fun (w : A) -> eq A x w) e1 z e1;;
+"
