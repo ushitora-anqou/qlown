@@ -13,9 +13,14 @@ open Syntax
 
 toplevel:
   | EOF { exit 0 }
-  | LET id=ID COLON typ=Expr EQ e=Expr SEMISEMI {
-      { p=LetDecl (id, typ, e) ; l=$symbolstartpos }
+  | LET id=ID COLON typ=Expr tr=option(LetStmtDef) SEMISEMI {
+      match tr with
+      | Some tr -> { p=LetDef (id, typ, tr); l=$symbolstartpos }
+      | None -> { p=LetDecl (id, typ); l=$symbolstartpos }
   }
+
+LetStmtDef:
+  | EQ Expr { $2 }
 
 Expr:
   | e=FunExpr | e=ArrowType { e }

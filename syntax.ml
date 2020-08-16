@@ -7,6 +7,8 @@ type exp =
 
 and exp_with_loc = { e : exp; l : Lexing.position }
 
-type program = LetDecl of string * exp_with_loc * exp_with_loc
+type program =
+  | LetDecl of string * exp_with_loc
+  | LetDef of string * exp_with_loc * exp_with_loc
 
 type program_with_loc = { p : program; l : Lexing.position }

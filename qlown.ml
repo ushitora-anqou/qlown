@@ -111,33 +111,40 @@ let conv g tr =
   in
   aux HashMap.empty 0 tr
 
-let rec read_eval_print ic =
+let read_eval_print ic =
   let lex = Lexing.from_channel ic in
-  if ic = stdin then (
-    print_string "# ";
-    flush stdout );
-  ( try
-      match Parser.toplevel Lexer.main lex with
-      | { p = Syntax.LetDecl (id, { e = ty; _ }, { e = tr; _ }); _ } -> (
-          let g = HashMap.empty in
-          let g = HashMap.add "False" (Decl (Univ 0)) g in
-          let g =
-            HashMap.add "False_ind"
-              (Decl (Prod (Univ 0, Prod (GVar "False", Var 1))))
-              g
-          in
-          try
-            if check_type g [] (conv g tr) (conv g ty) then
-              Printf.printf "%s VERIFIED\n" id
-            else failwith "type check failed"
-          with e ->
-            Printf.printf "%s UNVERIFIED (%s)\n" id @@ Printexc.to_string e )
-    with Parser.Error ->
-      let pos = Lexing.lexeme_start lex in
-      Printf.printf
-        "  %s\027[1m\027[31m^\027[0m\nParse.Error:%d: syntax error.\n\n"
-        (String.make pos ' ') (pos + 1) );
-  if ic == stdin then read_eval_print ic
+  let rec aux (g : global) =
+    if ic = stdin then (
+      print_string "# ";
+      flush stdout );
+    let g =
+      try
+        match Parser.toplevel Lexer.main lex with
+        | { p = Syntax.LetDecl (id, { e = ty; _ }); _ } ->
+            let ty = conv g ty in
+            Printf.printf "%s added (without verification)\n" id;
+            HashMap.add id (Decl ty) g
+        | { p = Syntax.LetDef (id, { e = ty; _ }, { e = tr; _ }); _ } ->
+            let tr = conv g tr in
+            let ty = conv g ty in
+            if not (check_type g [] tr ty) then failwith "type check failed";
+            Printf.printf "%s added (VERIFIED)\n" id;
+            HashMap.add id (Def (ty, tr)) g
+      with
+      | Parser.Error ->
+          let pos = Lexing.lexeme_start lex in
+          Printf.printf
+            "  %s\027[1m\027[31m^\027[0m\nParse.Error:%d: syntax error.\n\n"
+            (String.make pos ' ') (pos + 1);
+          g
+      | e ->
+          Printf.printf "Error: %s\n" @@ Printexc.to_string e;
+          g
+    in
+    aux g
+  in
+  let g = HashMap.empty in
+  aux g
 
 ;;
 read_eval_print stdin
