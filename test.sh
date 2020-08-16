@@ -37,7 +37,9 @@ test_positive "
 
 function test_negative() {
     res=$(echo "$1" | $QLOWN 2>&1)
-    if ( echo "$res" | grep " VERIFIED" > /dev/null ); then
+    if ( echo "$res" | grep -i "error" > /dev/null ); then
+        :
+    else
         echo "$res"
         fail "$1"
     fi
