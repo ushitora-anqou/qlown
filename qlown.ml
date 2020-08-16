@@ -111,40 +111,41 @@ let conv g tr =
   in
   aux HashMap.empty 0 tr
 
-let read_eval_print ic =
-  let lex = Lexing.from_channel ic in
-  let rec aux (g : global) =
-    if ic = stdin then (
-      print_string "# ";
-      flush stdout );
-    let g =
-      try
-        match Parser.toplevel Lexer.main lex with
-        | { p = Syntax.LetDecl (id, { e = ty; _ }); _ } ->
-            let ty = conv g ty in
-            Printf.printf "%s added (without verification)\n" id;
-            HashMap.add id (Decl ty) g
-        | { p = Syntax.LetDef (id, { e = ty; _ }, { e = tr; _ }); _ } ->
-            let tr = conv g tr in
-            let ty = conv g ty in
-            if not (check_type g [] tr ty) then failwith "type check failed";
-            Printf.printf "%s added (VERIFIED)\n" id;
-            HashMap.add id (Def (ty, tr)) g
-      with
-      | Parser.Error ->
-          let pos = Lexing.lexeme_start lex in
-          Printf.printf
-            "  %s\027[1m\027[31m^\027[0m\nParse.Error:%d: syntax error.\n\n"
-            (String.make pos ' ') (pos + 1);
-          g
-      | e ->
-          Printf.printf "Error: %s\n" @@ Printexc.to_string e;
-          g
-    in
-    aux g
-  in
-  let g = HashMap.empty in
-  aux g
+let verify_one (lex : Lexing.lexbuf) (g : global) =
+  try
+    match Parser.toplevel Lexer.main lex with
+    | { p = Syntax.LetDecl (id, { e = ty; _ }); _ } ->
+        let ty = conv g ty in
+        Printf.printf "%s added (without verification)\n" id;
+        HashMap.add id (Decl ty) g
+    | { p = Syntax.LetDef (id, { e = ty; _ }, { e = tr; _ }); _ } ->
+        let tr = conv g tr in
+        let ty = conv g ty in
+        if not (check_type g [] tr ty) then failwith "type check failed";
+        Printf.printf "%s added (VERIFIED)\n" id;
+        HashMap.add id (Def (ty, tr)) g
+  with
+  | Parser.Error ->
+      let pos = Lexing.lexeme_start lex in
+      Printf.printf
+        "  %s\027[1m\027[31m^\027[0m\nParse.Error:%d: syntax error.\n\n"
+        (String.make pos ' ') (pos + 1);
+      g
+  | e ->
+      Printf.printf "Error: %s\n" @@ Printexc.to_string e;
+      g
+
+let rec verify_all (lex : Lexing.lexbuf) (g : global) =
+  if lex.lex_eof_reached then g else verify_all lex @@ verify_one lex g
 
 ;;
-read_eval_print stdin
+let g = HashMap.empty in
+let lex = Lexing.from_channel stdin in
+if not (Unix.isatty Unix.stdin) then verify_all lex g
+else
+  let rec aux (g : global) =
+    print_string "# ";
+    flush stdout;
+    aux @@ verify_one lex g
+  in
+  aux g

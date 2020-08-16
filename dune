@@ -6,4 +6,5 @@
   (modules lexer)
 )
 (executable
- (name qlown))
+ (name qlown)
+ (libraries unix))
