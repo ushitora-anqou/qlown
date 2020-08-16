@@ -25,6 +25,9 @@ test_positive "
     let f : (P : Univ 0) -> False -> P = False_ind;;
     let f : (P : Univ 0) -> P -> (P -> False) -> False =
        fun (P : Univ 0) -> fun (x : P) -> fun (y : P -> False) -> y x;;
+    let f : (A : Univ 0) -> (x : A) -> (y : A) -> eq A x y -> eq A y x =
+      fun (A : Univ 0) -> fun (x : A) -> fun (y : A) -> fun (e : eq A x y) ->
+        eq_rec A x (fun (z : A) -> eq A z x) (eq_refl A x) y e;;
 "
 
 function test_negative() {
