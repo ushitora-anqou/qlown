@@ -1,5 +1,6 @@
 #!/bin/bash
 
+dune build
 QLOWN=_build/default/qlown.exe
 
 function fail() {
