@@ -1,0 +1,2 @@
+let False : Univ 0;;
+let False_ind : (P : Univ 0) -> False -> P;;

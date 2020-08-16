@@ -8,15 +8,15 @@ open Syntax
 %token <string> ID
 
 %start toplevel
-%type <Syntax.program_with_loc> toplevel
+%type <Syntax.program_with_loc option> toplevel
 %%
 
 toplevel:
-  | EOF { exit 0 }
+  | EOF { None }
   | LET id=ID COLON typ=Expr tr=option(LetStmtDef) SEMISEMI {
-      match tr with
+      Some (match tr with
       | Some tr -> { p=LetDef (id, typ, tr); l=$symbolstartpos }
-      | None -> { p=LetDecl (id, typ); l=$symbolstartpos }
+      | None -> { p=LetDecl (id, typ); l=$symbolstartpos })
   }
 
 LetStmtDef:

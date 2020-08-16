@@ -112,40 +112,59 @@ let conv g tr =
   aux HashMap.empty 0 tr
 
 let verify_one (lex : Lexing.lexbuf) (g : global) =
-  try
-    match Parser.toplevel Lexer.main lex with
-    | { p = Syntax.LetDecl (id, { e = ty; _ }); _ } ->
-        let ty = conv g ty in
-        Printf.printf "%s added (without verification)\n" id;
-        HashMap.add id (Decl ty) g
-    | { p = Syntax.LetDef (id, { e = ty; _ }, { e = tr; _ }); _ } ->
-        let tr = conv g tr in
-        let ty = conv g ty in
-        if not (check_type g [] tr ty) then failwith "type check failed";
-        Printf.printf "%s added (VERIFIED)\n" id;
-        HashMap.add id (Def (ty, tr)) g
-  with
-  | Parser.Error ->
-      let pos = Lexing.lexeme_start lex in
-      Printf.printf
-        "  %s\027[1m\027[31m^\027[0m\nParse.Error:%d: syntax error.\n\n"
-        (String.make pos ' ') (pos + 1);
-      g
-  | e ->
-      Printf.printf "Error: %s\n" @@ Printexc.to_string e;
-      g
+  match Parser.toplevel Lexer.main lex with
+  | None -> None
+  | Some { p = Syntax.LetDecl (id, { e = ty; _ }); _ } ->
+      let ty = conv g ty in
+      Printf.printf "%s added (without verification)\n" id;
+      Some (HashMap.add id (Decl ty) g)
+  | Some { p = Syntax.LetDef (id, { e = ty; _ }, { e = tr; _ }); _ } ->
+      let tr = conv g tr in
+      let ty = conv g ty in
+      if not (check_type g [] tr ty) then failwith "type check failed";
+      Printf.printf "%s added (VERIFIED)\n" id;
+      Some (HashMap.add id (Def (ty, tr)) g)
 
 let rec verify_all (lex : Lexing.lexbuf) (g : global) =
-  if lex.lex_eof_reached then g else verify_all lex @@ verify_one lex g
+  match verify_one lex g with None -> g | Some g -> verify_all lex g
 
 ;;
-let g = HashMap.empty in
+let g =
+  (* Read stdlib and get initial environment*)
+  let ic = open_in "stdlib.qlown" in
+  try
+    let g = verify_all (Lexing.from_channel ic) HashMap.empty in
+    close_in ic;
+    g
+  with e ->
+    close_in_noerr ic;
+    Printf.eprintf "Fatal error: stdlib is wrong (%s)" @@ Printexc.to_string e;
+    exit 1
+in
+
 let lex = Lexing.from_channel stdin in
-if not (Unix.isatty Unix.stdin) then verify_all lex g
+if not (Unix.isatty Unix.stdin) then (
+  try (* Reading file *)
+      verify_all lex g
+  with e ->
+    Printf.eprintf "Error: %s\n" @@ Printexc.to_string e;
+    exit 1 )
 else
+  (* Reading user input *)
   let rec aux (g : global) =
     print_string "# ";
     flush stdout;
-    aux @@ verify_one lex g
+    aux
+    @@
+    try match verify_one lex g with None -> exit 0 | Some g -> g with
+    | Parser.Error ->
+        let pos = Lexing.lexeme_start lex in
+        Printf.printf
+          "  %s\027[1m\027[31m^\027[0m\nParse.Error:%d: syntax error.\n\n"
+          (String.make pos ' ') (pos + 1);
+        g
+    | e ->
+        Printf.printf "Error: %s\n" @@ Printexc.to_string e;
+        g
   in
   aux g
