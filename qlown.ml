@@ -122,13 +122,22 @@ let conv g tr =
   in
   aux HashMap.empty 0 tr
 
-let verify_one (lex : Lexing.lexbuf) (g : global) =
+let eval_one (lex : Lexing.lexbuf) (g : global) =
+  let add_decl_wo_verif g id ty =
+    let ty = conv g ty in
+    Printf.printf "%s added (without verification)\n" id;
+    HashMap.add id (Decl ty) g
+  in
+  let add_def_wo_verif g id ty tr =
+    let ty = conv g ty in
+    let tr = conv g tr in
+    Printf.printf "%s added (without verification)\n" id;
+    HashMap.add id (Def (ty, tr)) g
+  in
   match Parser.toplevel Lexer.main lex with
   | None -> None
   | Some { p = Syntax.LetDecl (id, { e = ty; _ }); _ } ->
-      let ty = conv g ty in
-      Printf.printf "%s added (without verification)\n" id;
-      Some (HashMap.add id (Decl ty) g)
+      Some (add_decl_wo_verif g id ty)
   | Some { p = Syntax.LetDef (id, { e = ty; _ }, { e = tr; _ }); _ } ->
       let tr = conv g tr in
       let ty = conv g ty in
@@ -136,20 +145,26 @@ let verify_one (lex : Lexing.lexbuf) (g : global) =
       Printf.printf "%s added (VERIFIED)\n" id;
       Some (HashMap.add id (Def (ty, tr)) g)
   | Some { p = Syntax.AssumeLetDef (id, { e = ty; _ }, { e = tr; _ }); _ } ->
-      let tr = conv g tr in
-      let ty = conv g ty in
-      Printf.printf "%s added (without verification)\n" id;
-      Some (HashMap.add id (Def (ty, tr)) g)
+      Some (add_def_wo_verif g id ty tr)
+  | Some { p = Syntax.TypeDef (id, { e = typ; _ }, seq); _ } ->
+      let g = add_decl_wo_verif g id typ in
+      let g =
+        List.fold_left
+          (fun g ((id, { e = typ; _ }) : string * Syntax.exp_with_loc) ->
+            add_decl_wo_verif g id typ)
+          g seq
+      in
+      Some g
 
-let rec verify_all (lex : Lexing.lexbuf) (g : global) =
-  match verify_one lex g with None -> g | Some g -> verify_all lex g
+let rec eval_all (lex : Lexing.lexbuf) (g : global) =
+  match eval_one lex g with None -> g | Some g -> eval_all lex g
 
 ;;
 let g =
   (* Read stdlib and get initial environment*)
   let ic = open_in "stdlib.qlown" in
   try
-    let g = verify_all (Lexing.from_channel ic) HashMap.empty in
+    let g = eval_all (Lexing.from_channel ic) HashMap.empty in
     close_in ic;
     g
   with e ->
@@ -161,7 +176,7 @@ in
 let lex = Lexing.from_channel stdin in
 if not (Unix.isatty Unix.stdin) then (
   try (* Reading file *)
-      verify_all lex g
+      eval_all lex g
   with e ->
     Printf.eprintf "Error: %s\n" @@ Printexc.to_string e;
     exit 1 )
@@ -172,7 +187,7 @@ else
     flush stdout;
     aux
     @@
-    try match verify_one lex g with None -> exit 0 | Some g -> g with
+    try match eval_one lex g with None -> exit 0 | Some g -> g with
     | Parser.Error ->
         let pos = Lexing.lexeme_start lex in
         Printf.printf

@@ -5,6 +5,7 @@ let reservedWords = [
   ("fun", Parser.FUN);
   ("Univ", Parser.UNIV);
   ("assume", Parser.ASSUME);
+  ("type", Parser.TYPE);
 ]
 
 exception Error of int
@@ -26,6 +27,7 @@ rule main = parse
 | "->" { Parser.RARROW }
 | "=" { Parser.EQ }
 | ";;" { Parser.SEMISEMI }
+| "|" { Parser.PIPE }
 
 | ['a'-'z' 'A'-'Z'] ['a'-'z' 'A'-'Z' '0'-'9' '_' '\'']*
     { let id = Lexing.lexeme lexbuf in

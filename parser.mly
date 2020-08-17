@@ -2,7 +2,7 @@
 open Syntax
 %}
 
-%token LET FUN UNIV ASSUME COLON LPAREN RPAREN RARROW EQ SEMISEMI EOF
+%token LET FUN UNIV ASSUME TYPE COLON LPAREN RPAREN RARROW EQ SEMISEMI PIPE EOF
 
 %token <int> INTV
 %token <string> ID
@@ -23,9 +23,15 @@ toplevel:
       | Some tr -> { p=AssumeLetDef (id, typ, tr); l=$symbolstartpos }
       | None -> { p=LetDecl (id, typ); l=$symbolstartpos })
   }
+  | TYPE id=ID COLON typ=Expr EQ seq=list(TypeStmtBind) SEMISEMI {
+      Some ({ p=TypeDef (id, typ, seq); l=$symbolstartpos })
+  }
 
 LetStmtDef:
   | EQ Expr { $2 }
+
+TypeStmtBind:
+  | PIPE id=ID COLON typ=Expr { (id, typ) }
 
 Expr:
   | e=FunExpr | e=ArrowType { e }
