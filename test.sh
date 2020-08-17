@@ -33,6 +33,7 @@ test_positive "
       fun (A : Univ 0) -> fun (x : A) -> fun (y : A) -> fun (z : A) ->
       fun (e1 : eq A x y) -> fun (e2 : eq A y z) ->
         eq_rec A y (fun (w : A) -> eq A x w) e1 z e2;;
+    let f : eq (Univ 1) (Univ 0) (Univ 0) = eq_refl (Univ 1) (Univ 0);;
 "
 
 function test_negative() {

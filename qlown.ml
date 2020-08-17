@@ -50,13 +50,24 @@ let rec reduce_full (g : global) (e : local) = function
       Prod (ty', tr')
   | tr -> tr
 
-(* 与えられた2つの項の正規形が、ある文脈のもとで等しいかを返す。*)
-let equal_terms (g : global) (e : local) (t1 : term) (t2 : term) : bool =
-  reduce_full g e t1 = reduce_full g e t2
-
 (* ある文脈eのもとで、項trが型tyを持つかを返す（型検査を行う）。 *)
 let rec check_type (g : global) (e : local) (tr : term) (ty : typ) : bool =
-  match typeof g e tr with Some ty' -> equal_terms g e ty' ty | None -> false
+  match typeof g e tr with
+  | None -> false
+  | Some ty' ->
+      let ty' = reduce_full g e ty' in
+      let ty = reduce_full g e ty in
+      let rec aux ty' ty =
+        match (ty', ty) with
+        | Var i, Var i' -> i = i'
+        | GVar id, GVar id' -> id = id'
+        | App (f, a), App (f', a') -> aux f f' && aux a a'
+        | Lam (ty, tr), Lam (ty', tr') -> aux ty ty' && aux tr tr'
+        | Prod (ty, tr), Prod (ty', tr') -> aux ty ty' && aux tr tr'
+        | Univ i, Univ j -> i <= j (* Univ i implies Univ j if i <= j *)
+        | _ -> false
+      in
+      aux ty' ty
 
 (* ある環境eのもとでの項trの型を返す。*)
 and typeof (g : global) (e : local) = function
