@@ -17,6 +17,24 @@ type local = binding list
 
 type global = binding HashMap.t
 
+let rec string_of_term = function
+  | Var i -> Printf.sprintf "(Var %d)" i
+  | GVar id -> Printf.sprintf "(GVar %s)" id
+  | App (l, r) -> Printf.sprintf "(%s %s)" (string_of_term l) (string_of_term r)
+  | Match (tr, brs) ->
+      Printf.sprintf "(match %s with%s)" (string_of_term tr)
+        ( String.concat " | "
+        @@ List.map
+             (fun (ctor, nvars, br) ->
+               Printf.sprintf "%s (%d) -> %s" ctor nvars (string_of_term br))
+             brs )
+  | Lam (ty, tr) ->
+      Printf.sprintf "(fun 0 : %s -> %s)" (string_of_term ty)
+        (string_of_term tr)
+  | Prod (ty, tr) ->
+      Printf.sprintf "((0 : %s) -> %s)" (string_of_term ty) (string_of_term tr)
+  | Univ i -> Printf.sprintf "(Univ %d)" i
+
 (* de Bruijn index で index i >= n を d シフト（加算）する。 *)
 let rec shift_term (n : int) (d : int) = function
   | Var i when i >= n -> Var (i + d)
