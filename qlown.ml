@@ -4,6 +4,7 @@ type term =
   | Var of int
   | GVar of string
   | App of term * term
+  | Match of term * (string * int * term) list
   | Lam of typ * term (* ラムダ式 (fun 0 : T -> f) *)
   | Prod of typ * term (* 関数型 (forall 0 : T, S) *)
   | Univ of int
@@ -20,12 +21,28 @@ type global = binding HashMap.t
 let rec shift_term (n : int) (d : int) = function
   | Var i when i >= n -> Var (i + d)
   | App (tr0, tr1) -> App (shift_term n d tr0, shift_term n d tr1)
+  | Match (tr, brs) ->
+      Match
+        ( shift_term n d tr,
+          List.map
+            (fun (ctor, nvars, tr) ->
+              (ctor, nvars, shift_term (n + nvars) d tr))
+            brs )
   | Lam (ty, tr) -> Lam (shift_term n d ty, shift_term (n + 1) d tr)
   | Prod (ty, tr) -> Prod (shift_term n d ty, shift_term (n + 1) d tr)
   | tr -> tr
 
+(* ` | ctor x1 x2 ... xnvars ` というパターンにある項をマッチさせる。 *)
+let rec match_pattern g e ctor nvars = function
+  | GVar id when ctor = id && nvars = 0 -> Some e
+  | App (tr, tr') -> (
+      match typeof g e tr' with
+      | None -> failwith "(Fatal) input should be type checked in advance."
+      | Some ty' -> match_pattern g (Def (ty', tr') :: e) ctor (nvars - 1) tr )
+  | _ -> None
+
 (* 引数で与えられた項を正規形まで完全β簡約する。 *)
-let rec reduce_full (g : global) (e : local) = function
+and reduce_full (g : global) (e : local) = function
   | Var i -> (
       match List.nth e i with
       | Decl _ -> Var i
@@ -40,6 +57,17 @@ let rec reduce_full (g : global) (e : local) = function
       | Lam (ty, tr) ->
           shift_term 0 (-1) @@ reduce_full g (Def (ty, a') :: e) tr
       | f' -> App (f', a') )
+  | Match (tr, brs) ->
+      (* FIXME: Check if pattern match is exausitve. *)
+      let tr = reduce_full g e tr in
+      let rec aux = function
+        | [] -> Match (tr, brs)
+        | (ctor, nvars, tr') :: xs -> (
+            match match_pattern g e ctor nvars tr with
+            | None -> aux xs
+            | Some e -> reduce_full g e tr' )
+      in
+      aux brs
   | Lam (ty, tr) ->
       let ty' = reduce_full g e ty in
       let tr' = reduce_full g (Decl ty' :: e) tr in
@@ -51,7 +79,7 @@ let rec reduce_full (g : global) (e : local) = function
   | tr -> tr
 
 (* ある文脈eのもとで、項trが型tyを持つかを返す（型検査を行う）。 *)
-let rec check_type (g : global) (e : local) (tr : term) (ty : typ) : bool =
+and check_type (g : global) (e : local) (tr : term) (ty : typ) : bool =
   match typeof g e tr with
   | None -> false
   | Some ty' ->
@@ -94,6 +122,29 @@ and typeof (g : global) (e : local) = function
           Some (shift_term 0 (-1) @@ reduce_full g (Def (ty, a) :: e) tr)
       | _ -> None )
   | Univ i -> Some (Univ (i + 1))
+  | Match (tr, brs) ->
+      let _ = typeof g e tr in
+      List.fold_left
+        (fun ty (ctor, nvars, tr) ->
+          (* FIXME: ctorがtyのコンストラクタであることを確認する。 *)
+          (* nvarsを環境に追加した上でtrを調べる。 *)
+          let rec aux i e = function
+            | Prod (ty, tr) when i <> 0 -> aux (i - 1) (Decl ty :: e) tr
+            | GVar _ when i = 0 -> e
+            | _ -> failwith "(fatal) not valid constructor"
+          in
+          let e =
+            aux nvars e
+            @@
+            match HashMap.find ctor g with
+            | Decl ty -> ty
+            | _ -> failwith "constructor not found"
+          in
+          match (ty, typeof g e tr) with
+          | None, Some ty' -> Some ty'
+          | Some ty, Some ty' when ty = ty' -> Some ty'
+          | _ -> None)
+        None brs
 
 (* 型の型を返す。*)
 and typeof_type (g : global) (e : local) (t : term) =
@@ -112,6 +163,21 @@ let conv g tr =
     | Syntax.Var id -> failwith @@ Printf.sprintf "Undefined variable: %s" id
     | Syntax.App ({ e = tr1; _ }, { e = tr2; _ }) ->
         App (aux e d tr1, aux e d tr2)
+    | Syntax.Match ({ e = tr; _ }, brs) ->
+        Match
+          ( aux e d tr,
+            List.map
+              (fun ((ctor, args, { e = br; _ }) :
+                     string * string list * Syntax.exp_with_loc) ->
+                let rec aux' e i = function
+                  | [] -> e
+                  | "_" :: xs -> aux' e (i + 1) xs
+                  | x :: xs -> aux' (HashMap.add x (d + i) e) (i + 1) xs
+                in
+                let e = aux' e 0 args in
+                let nvars = List.length args in
+                (ctor, nvars, aux e (d + nvars) br))
+              brs )
     | Syntax.Prod (Some x, { e = ty; _ }, { e = tr; _ }) ->
         Prod (aux e d ty, aux (HashMap.add x d e) (d + 1) tr)
     | Syntax.Prod (None, { e = ty; _ }, { e = tr; _ }) ->

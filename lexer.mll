@@ -6,6 +6,8 @@ let reservedWords = [
   ("Univ", Parser.UNIV);
   ("assume", Parser.ASSUME);
   ("type", Parser.TYPE);
+  ("match", Parser.MATCH);
+  ("with", Parser.WITH);
 ]
 
 exception Error of int
@@ -29,7 +31,7 @@ rule main = parse
 | ";;" { Parser.SEMISEMI }
 | "|" { Parser.PIPE }
 
-| ['a'-'z' 'A'-'Z'] ['a'-'z' 'A'-'Z' '0'-'9' '_' '\'']*
+| ['_' 'a'-'z' 'A'-'Z'] ['a'-'z' 'A'-'Z' '0'-'9' '_' '\'']*
     { let id = Lexing.lexeme lexbuf in
       try
         List.assoc id reservedWords

@@ -2,7 +2,7 @@
 open Syntax
 %}
 
-%token LET FUN UNIV ASSUME TYPE COLON LPAREN RPAREN RARROW EQ SEMISEMI PIPE EOF
+%token LET FUN UNIV ASSUME TYPE MATCH WITH COLON LPAREN RPAREN RARROW EQ SEMISEMI PIPE EOF
 
 %token <int> INTV
 %token <string> ID
@@ -34,7 +34,7 @@ TypeStmtBind:
   | PIPE id=ID COLON typ=Expr { (id, typ) }
 
 Expr:
-  | e=FunExpr | e=ArrowType { e }
+  | e=MatchExpr | e=FunExpr | e=ArrowType { e }
 
 ArrowType:
   | LPAREN x=ID COLON lhs=Expr RPAREN RARROW rhs=Expr {
@@ -48,6 +48,14 @@ FunExpr:
       { e=Lam (id, ty, tr); l=$symbolstartpos }
   }
 
+MatchExpr:
+  | MATCH e=Expr WITH brs=list(MatchBranch) {
+      { e=Match (e, brs); l=$symbolstartpos }
+  }
+
+MatchBranch:
+  | PIPE ctor=ID args=list(ID) RARROW e=Expr { (ctor, args, e) }
+
 AppExpr:
   | tr1=AppExpr tr2=AExpr { { e=App (tr1, tr2); l=$symbolstartpos } }
   | e=AExpr { e }
@@ -56,3 +64,4 @@ AExpr:
   | LPAREN tr=Expr RPAREN { tr }
   | id=ID { { e=Var id; l=$symbolstartpos } }
   | UNIV index=INTV { { e=Univ index; l=$symbolstartpos } }
+
