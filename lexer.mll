@@ -8,6 +8,7 @@ let reservedWords = [
   ("type", Parser.TYPE);
   ("match", Parser.MATCH);
   ("with", Parser.WITH);
+  ("fix", Parser.FIX);
 ]
 
 exception Error of int
@@ -27,6 +28,7 @@ rule main = parse
 | "(" { Parser.LPAREN }
 | ")" { Parser.RPAREN }
 | "->" { Parser.RARROW }
+| "=>" { Parser.FATRARROW }
 | "=" { Parser.EQ }
 | ";;" { Parser.SEMISEMI }
 | "|" { Parser.PIPE }

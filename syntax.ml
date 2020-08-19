@@ -3,6 +3,7 @@ type exp =
   | Univ of int
   | Prod of string option * exp_with_loc * exp_with_loc
   | Lam of string * exp_with_loc * exp_with_loc
+  | Fix of string * string * exp_with_loc * exp_with_loc * exp_with_loc
   | App of exp_with_loc * exp_with_loc
   | Match of exp_with_loc * (string * string list * exp_with_loc) list
 

@@ -42,6 +42,21 @@ test_positive "
     ;;
 
     let f : eq nat (plus1ifnonzero (S O)) (S (S O)) = eq_refl nat (S (S O));;
+
+    let add : nat -> nat -> nat =
+      fix F (n : nat) : (nat -> nat) => fun (m : nat) ->
+        match n with
+        | O -> m
+        | S n' -> S (F n' m)
+    ;;
+    let f : eq nat (add (S (S O)) (S O)) (S (S (S O))) = eq_refl nat (S (S (S O)));;
+
+    let f : (n : nat) -> eq nat (add n O) n =
+      nat_rect (fun (n : nat) -> eq nat (add n O) n)
+               (eq_refl nat O)
+               (fun (n : nat) -> fun (H : eq nat (add n O) n) -> f_apply nat nat (add n O) n S H)
+    ;;
+
 "
 
 function test_negative() {
