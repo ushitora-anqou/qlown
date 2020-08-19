@@ -34,6 +34,14 @@ test_positive "
       fun (e1 : eq A x y) -> fun (e2 : eq A y z) ->
         eq_rec A y (fun (w : A) -> eq A x w) e1 z e2;;
     let f : eq (Univ 1) (Univ 0) (Univ 0) = eq_refl (Univ 1) (Univ 0);;
+
+    let plus1ifnonzero : nat -> nat = fun (n : nat) ->
+      match n with
+      | O -> O
+      | S n' -> S n
+    ;;
+
+    let f : eq nat (plus1ifnonzero (S O)) (S (S O)) = eq_refl nat (S (S O));;
 "
 
 function test_negative() {
