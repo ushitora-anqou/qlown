@@ -1,63 +1,63 @@
 type False : Univ 0 = ;;
-let False_ind : (P : Univ 0) -> False -> P;;
+let False_ind : P:Univ 0 -> False -> P;;
 
-type eq : (A : Univ 10) -> A -> A -> Univ 0 =
-  | eq_refl : (A : Univ 10) -> (x : A) -> eq A x x
+type eq : A:Univ 10 -> A -> A -> Univ 0 =
+  | eq_refl : A:Univ 10 -> x:A -> eq A x x
 ;;
-assume let eq_rec : (A : Univ 10) -> (x : A) -> (P : A -> Univ 0) ->
-                    P x -> (y : A) -> eq A x y -> P y =
-  fun (A : Univ 0) -> fun (x : A) -> fun (P : A -> Univ 0) ->
-  fun (f : P x) -> fun (y : A) -> fun (e : eq A x y) -> f;;
+assume let eq_rec : A:Univ 10 -> x:A -> P:(A -> Univ 0) ->
+                    P x -> y:A -> eq A x y -> P y =
+  fun A:Univ 0 -> fun x:A -> fun P:(A -> Univ 0) ->
+  fun f:P x -> fun y:A -> fun e:eq A x y -> f;;
 
 type nat : Univ 0 =
   | O : nat
   | S : nat -> nat
 ;;
-let nat_rect : (P : nat -> Univ 10) -> P O -> ((n : nat) -> P n -> P (S n)) -> (n : nat) -> P n;;
+let nat_rect : P:(nat -> Univ 10) -> P O -> (n:nat -> P n -> P (S n)) -> n:nat -> P n;;
 
 let add : nat -> nat -> nat =
-  fix F (n : nat) : (nat -> nat) => fun (m : nat) ->
+  fix F (n : nat) : (nat -> nat) => fun m:nat ->
     match n with
     | O -> m
     | S n' -> S (F n' m)
 ;;
 
-let f_apply : (A : Univ 0) -> (B : Univ 0) -> (x : A) -> (y : A) -> (f : A -> B) ->
+let f_apply : A:Univ 0 -> B:Univ 0 -> x:A -> y:A -> f:(A -> B) ->
               eq A x y -> eq B (f x) (f y) =
-  fun (A : Univ 0) -> fun (B : Univ 0) -> fun (x : A) -> fun (y : A) -> fun (f : A -> B) ->
-  fun (e : eq A x y) ->
-    eq_rec A x (fun (z : A) -> eq B (f x) (f z)) (eq_refl B (f x)) y e
+  fun A:Univ 0 -> fun B:Univ 0 -> fun x:A -> fun y:A -> fun f:(A -> B) ->
+  fun e:eq A x y ->
+    eq_rec A x (fun z:A -> eq B (f x) (f z)) (eq_refl B (f x)) y e
 ;;
 
-let eq_sym : (A : Univ 10) -> (x : A) -> (y : A) -> eq A x y -> eq A y x =
-  fun (A : Univ 10) -> fun (x : A) -> fun (y : A) -> fun (e : eq A x y) ->
-    eq_rec A x (fun (z : A) -> eq A z x) (eq_refl A x) y e
+let eq_sym : A:Univ 10 -> x:A -> y:A -> eq A x y -> eq A y x =
+  fun A:Univ 10 -> fun x:A -> fun y:A -> fun e:eq A x y ->
+    eq_rec A x (fun z:A -> eq A z x) (eq_refl A x) y e
 ;;
 
-let eq_trans : (A : Univ 0) -> (x : A) -> (y : A) -> (z : A) ->
+let eq_trans : A:Univ 0 -> x:A -> y:A -> z:A ->
                eq A x y -> eq A y z -> eq A x z =
-  fun (A : Univ 0) -> fun (x : A) -> fun (y : A) -> fun (z : A) ->
-  fun (e1 : eq A x y) -> fun (e2 : eq A y z) ->
-    eq_rec A y (fun (w : A) -> eq A x w) e1 z e2
+  fun A:Univ 0 -> fun x:A -> fun y:A -> fun z:A ->
+  fun e1:eq A x y -> fun e2:eq A y z ->
+    eq_rec A y (fun w:A -> eq A x w) e1 z e2
 ;;
 
-let nat_plus_n_O : (n : nat) -> eq nat (add n O) n =
-  nat_rect (fun (n : nat) -> eq nat (add n O) n)
+let nat_plus_n_O : n:nat -> eq nat (add n O) n =
+  nat_rect (fun n:nat -> eq nat (add n O) n)
            (eq_refl nat O)
-           (fun (n : nat) -> fun (H : eq nat (add n O) n) -> f_apply nat nat (add n O) n S H)
+           (fun n:nat -> fun H:eq nat (add n O) n -> f_apply nat nat (add n O) n S H)
 ;;
 
-let nat_plus_n_Sm : (n : nat) -> (m : nat) -> eq nat (S (add n m)) (add n (S m)) =
-    nat_rect (fun (n : nat) -> (m : nat) -> eq nat (S (add n m)) (add n (S m)))
-             (fun (m : nat) -> eq_refl nat (S m))
-             (fun (n : nat) -> fun (H : (m : nat) -> eq nat (S (add n m)) (add n (S m))) ->
-               fun (m : nat) -> f_apply nat nat (S (add n m)) (add n (S m)) S (H m))
+let nat_plus_n_Sm : n:nat -> m:nat -> eq nat (S (add n m)) (add n (S m)) =
+    nat_rect (fun n:nat -> m:nat -> eq nat (S (add n m)) (add n (S m)))
+             (fun m:nat -> eq_refl nat (S m))
+             (fun n:nat -> fun H:(m:nat -> eq nat (S (add n m)) (add n (S m))) ->
+               fun m:nat -> f_apply nat nat (S (add n m)) (add n (S m)) S (H m))
 ;;
 
-let nat_comm : (n : nat) -> (m : nat) -> eq nat (add n m) (add m n) =
-  nat_rect (fun (n : nat) -> (m : nat) -> eq nat (add n m) (add m n))
-           (fun (m : nat) -> eq_trans nat (add O m) m (add m O) (eq_refl nat m) (eq_sym nat (add m O) m (nat_plus_n_O m)))
-           (fun (n : nat) -> fun (H : (m : nat) -> eq nat (add n m) (add m n)) -> fun (m : nat) ->
+let nat_comm : n:nat -> m:nat -> eq nat (add n m) (add m n) =
+  nat_rect (fun n:nat -> m:nat -> eq nat (add n m) (add m n))
+           (fun m:nat -> eq_trans nat (add O m) m (add m O) (eq_refl nat m) (eq_sym nat (add m O) m (nat_plus_n_O m)))
+           (fun n:nat -> fun H:(m:nat -> eq nat (add n m) (add m n)) -> fun m:nat ->
              eq_trans nat (add (S n) m) (S (add n m)) (add m (S n))
                           (eq_refl nat (add (S n) m))
                           (eq_trans nat (S (add n m)) (S (add m n)) (add m (S n))

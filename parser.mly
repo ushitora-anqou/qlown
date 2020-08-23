@@ -37,14 +37,14 @@ Expr:
   | e=MatchExpr | e=FunExpr | e=FixExpr | e=ArrowType { e }
 
 ArrowType:
-  | LPAREN x=ID COLON lhs=Expr RPAREN RARROW rhs=Expr {
+  | x=ID COLON lhs=AppExpr RARROW rhs=Expr {
       { e=Prod (Some x, lhs, rhs); l=$symbolstartpos }
   }
   | lhs=AppExpr RARROW rhs=Expr { { e=Prod (None, lhs, rhs); l=$symbolstartpos } }
   | e=AppExpr { e }
 
 FunExpr:
-  | FUN LPAREN id=ID COLON ty=Expr RPAREN RARROW tr=Expr {
+  | FUN id=ID COLON ty=AppExpr RARROW tr=Expr {
       { e=Lam (id, ty, tr); l=$symbolstartpos }
   }
 
