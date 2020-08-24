@@ -2,7 +2,7 @@
 open Syntax
 %}
 
-%token LET FUN UNIV ASSUME TYPE MATCH WITH FIX COLON LPAREN RPAREN RARROW FATRARROW EQ SEMISEMI PIPE EOF
+%token LET FUN UNIV ASSUME TYPE MATCH WITH FIX COLON LPAREN RPAREN RARROW EQ SEMISEMI PIPE EOF
 
 %token <int> INTV
 %token <string> ID
@@ -49,7 +49,7 @@ FunExpr:
   }
 
 FixExpr:
-  | FIX funname=ID LPAREN id=ID COLON ty1=Expr RPAREN COLON ty2=Expr FATRARROW tr=Expr {
+  | FIX funname=ID LPAREN id=ID COLON ty1=Expr RPAREN COLON ty2=AppExpr RARROW tr=Expr {
       { e=Fix (funname, id, ty1, ty2, tr); l=$symbolstartpos }
   }
 

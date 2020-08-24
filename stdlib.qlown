@@ -14,7 +14,7 @@ type nat : Univ 0 =
 let nat_rect : P:(nat -> Univ 10) -> P O -> (n:nat -> P n -> P (S n)) -> n:nat -> P n;;
 
 let add : nat -> nat -> nat =
-  fix F (n : nat) : (nat -> nat) => fun m:nat ->
+  fix F (n : nat) : (nat -> nat) -> fun m:nat ->
     match n with
     | O -> m
     | S n' -> S (F n' m)
