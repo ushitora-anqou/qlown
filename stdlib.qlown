@@ -4,10 +4,8 @@ let False_ind : P:Univ 0 -> False -> P;;
 type eq : A:Univ 10 -> A -> A -> Univ 0 =
   | eq_refl : A:Univ 10 -> x:A -> eq A x x
 ;;
-assume let eq_rec : A:Univ 10 -> x:A -> P:(A -> Univ 0) ->
-                    P x -> y:A -> eq A x y -> P y =
-  fun A:Univ 0 -> fun x:A -> fun P:(A -> Univ 0) ->
-  fun f:P x -> fun y:A -> fun e:eq A x y -> f;;
+let eq_rec : A:Univ 10 -> x:A -> P:(A -> Univ 0) ->
+             P x -> y:A -> eq A x y -> P y;;
 
 type nat : Univ 0 =
   | O : nat
