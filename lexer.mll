@@ -9,6 +9,9 @@ let reservedWords = [
   ("match", Parser.MATCH);
   ("with", Parser.WITH);
   ("fix", Parser.FIX);
+  ("return", Parser.RETURN);
+  ("as", Parser.AS);
+  ("in", Parser.IN);
 ]
 
 exception Error of int

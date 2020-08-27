@@ -2,7 +2,7 @@
 open Syntax
 %}
 
-%token LET FUN UNIV ASSUME TYPE MATCH WITH FIX COLON LPAREN RPAREN RARROW EQ SEMISEMI PIPE EOF
+%token LET FUN UNIV ASSUME TYPE MATCH WITH FIX RETURN AS IN COLON LPAREN RPAREN RARROW EQ SEMISEMI PIPE EOF
 
 %token <int> INTV
 %token <string> ID
@@ -54,8 +54,8 @@ FixExpr:
   }
 
 MatchExpr:
-  | MATCH e=Expr WITH brs=list(MatchBranch) {
-      { e=Match (e, brs); l=$symbolstartpos }
+  | MATCH tr=Expr AS x=ID IN in_ty=ID in_vars=list(ID) RETURN ret_ty=Expr WITH brs=list(MatchBranch) {
+      { e=Match { tr; x; in_ty; in_vars; ret_ty; brs }; l=$symbolstartpos }
   }
 
 MatchBranch:
