@@ -117,37 +117,35 @@ let rec shift_term (n : int) (d : int) = function
   | Prod (ty, tr) -> Prod (shift_term n d ty, shift_term (n + 1) d tr)
   | tr -> tr
 
-(* トップレベルでde Bruijn indexでindexを指す項をすべてnewtrに置換する。*)
-let rec subst index newtr = function
-  | Var i when i = index -> shift_term 0 (i + 1) newtr
-  | App (tr1, tr2) -> App (subst index newtr tr1, subst index newtr tr2)
-  | Match { tr; in_ty; in_nvars; ret_ty; brs } ->
-      Match
-        {
-          tr = subst index newtr tr;
-          in_ty;
-          in_nvars;
-          ret_ty = subst (index + 1 + in_nvars) newtr ret_ty;
-          brs =
-            List.map
-              (fun (ctor, nvars, br) ->
-                (ctor, nvars, subst (index + nvars) newtr br))
-              brs;
-        }
-  | Lam (ty, tr) -> Lam (subst index newtr ty, subst (index + 1) newtr tr)
-  | Fix (ty1, ty2, tr) ->
-      Fix
-        ( subst index newtr ty1,
-          subst (index + 1) newtr ty2,
-          subst (index + 2) newtr tr )
-  | Prod (ty, tr) -> Prod (subst index newtr ty, subst (index + 1) newtr tr)
-  | tr -> tr
+(* de Bruijn indexで0を指す項をすべてnewtrに置換する。*)
+let subst (newtr : term) (tr : term) =
+  let rec aux n = function
+    | Var i when i = n -> shift_term 0 (i + 1) newtr
+    | App (tr1, tr2) -> App (aux n tr1, aux n tr2)
+    | Match { tr; in_ty; in_nvars; ret_ty; brs } ->
+        Match
+          {
+            tr = aux n tr;
+            in_ty;
+            in_nvars;
+            ret_ty = aux (n + 1 + in_nvars) ret_ty;
+            brs =
+              List.map
+                (fun (ctor, nvars, br) -> (ctor, nvars, aux (n + nvars) br))
+                brs;
+          }
+    | Lam (ty, tr) -> Lam (aux n ty, aux (n + 1) tr)
+    | Fix (ty1, ty2, tr) -> Fix (aux n ty1, aux (n + 1) ty2, aux (n + 2) tr)
+    | Prod (ty, tr) -> Prod (aux n ty, aux (n + 1) tr)
+    | tr -> tr
+  in
+  shift_term 0 (-1) @@ aux 0 tr
 
 (* ` | ctor x1 x2 ... xnvars ` というパターンに入力項をマッチさせ、置換後の結果を返す。 *)
 let rec match_pattern ctor nvars br tr =
   let rec aux i br = function
     | GVar id when ctor = id && i = nvars -> Some br
-    | App (tr1, tr2) -> aux (i + 1) (subst i tr2 br) tr1
+    | App (tr1, tr2) -> aux (i + 1) (subst tr2 br) tr1
     | _ -> None
   in
   aux 0 br tr
@@ -165,16 +163,16 @@ and reduce_full (g : global) (e : local) = function
   | App (f, a) -> (
       let a' = reduce_full g e a in
       match reduce_full g e f with
-      | Lam (_, tr) -> reduce_full g e @@ shift_term 0 (-1) @@ subst 0 a' tr
+      | Lam (_, tr) -> reduce_full g e @@ subst a' tr
       | Fix (ty1, ty2, tr) as fix ->
           (* 簡約は必ずとまると仮定する。 *)
           (* fix (0:ty1) : ty2 -> tr = fun 1:(ty1 -> ty2) -> fun 0:ty1 -> tr *)
           let tr' =
-            match shift_term 0 (-1) @@ subst 0 fix (Lam (ty1, tr)) with
+            match subst fix (Lam (ty1, tr)) with
             | Lam (_, tr') -> tr'
             | _ -> failwith "unreachable"
           in
-          let tr' = shift_term 0 (-1) @@ subst 0 a' tr' in
+          let tr' = subst a' tr' in
           let tr' = reduce_full g e tr' in
           print_debug () "a':  %s\n" @@ string_of_term a';
           print_debug () "fix: %s\n" @@ string_of_term fix;
@@ -199,7 +197,7 @@ and reduce_full (g : global) (e : local) = function
             | None -> aux brs
             | Some br ->
                 (* Branch found *)
-                reduce_full g e @@ shift_term 0 (-nvars) br )
+                reduce_full g e br )
       in
       aux brs
   | Lam (ty, tr) ->
@@ -311,8 +309,8 @@ and typeof (ctordb : ctor_info HashMap.t) (g : global) (e : local) (tr : term) =
           (* 依存型に対応するためaの値をtrに代入する *)
           print_debug () "\tty  %s\n" @@ string_of_term ty;
           print_debug () "\ttr  %s\n" @@ string_of_term tr;
-          print_debug () "\tres %s\n" @@ string_of_term @@ subst 0 a tr;
-          Some (shift_term 0 (-1) @@ subst 0 a tr)
+          print_debug () "\tres %s\n" @@ string_of_term @@ subst a tr;
+          Some (subst a tr)
       | _ -> None )
   | Univ i -> Some (Univ (i + 1))
   | Match { tr; in_ty; in_nvars; ret_ty; brs } ->
@@ -343,21 +341,20 @@ and typeof (ctordb : ctor_info HashMap.t) (g : global) (e : local) (tr : term) =
               List.fold_left
                 (fun (i, ty) ui ->
                   let ui = shift_term 0 (n + 1 - i - 1) ui in
-                  (i + 1, subst 0 ui ty |> shift_term 0 (-1)))
+                  (i + 1, subst ui ty))
                 (0, ret_ty)
               @@ List.rev info.ty_args
             in
             (* 3. Get expected type of br i.e. [x->ctor x1 x2 .. xm]tmp *)
             let expected_br_ty =
               tmp
-              |> subst 0
+              |> subst
                    ((* Construct `ctor x1 x2 .. xnvars`
                        i.e. `ctor (Var (nvars-1)) .. (Var 0)` *)
                     let rec aux n =
                       if n = nvars then GVar ctor else App (aux (n + 1), Var n)
                     in
                     aux 0)
-              |> shift_term 0 (-1)
             in
             (* Get environment for br *)
             let e =
@@ -375,12 +372,12 @@ and typeof (ctordb : ctor_info HashMap.t) (g : global) (e : local) (tr : term) =
           List.fold_left
             (fun (i, ty) ti ->
               let ti = shift_term 0 (1 + n - i - 1) ti in
-              (i + 1, shift_term 0 (-1) @@ subst 0 ti ty))
+              (i + 1, subst ti ty))
             (0, ret_ty)
           @@ List.rev ts
         in
         (* Get [x->t]tmp *)
-        Some (shift_term 0 (-1) @@ subst 0 tr tmp)
+        Some (subst tr tmp)
       else None
 
 (* 型の型を返す。*)
