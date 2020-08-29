@@ -117,38 +117,55 @@ let rec shift_term (n : int) (d : int) = function
   | Prod (ty, tr) -> Prod (shift_term n d ty, shift_term (n + 1) d tr)
   | tr -> tr
 
+(* トップレベルでde Bruijn indexでnを指す項をすべてnewtrに置換する。
+   置換後の項は一般にwell-formedではない。
+   基本的にはsubstのための関数だが、単体で有用な場合もある。 *)
+let rec subst' n newtr = function
+  | Var i when i = n -> shift_term 0 (i + 1) newtr
+  | App (tr1, tr2) -> App (subst' n newtr tr1, subst' n newtr tr2)
+  | Match { tr; in_ty; in_nvars; ret_ty; brs } ->
+      Match
+        {
+          tr = subst' n newtr tr;
+          in_ty;
+          in_nvars;
+          ret_ty = subst' (n + 1 + in_nvars) newtr ret_ty;
+          brs =
+            List.map
+              (fun (ctor, nvars, br) ->
+                (ctor, nvars, subst' (n + nvars) newtr br))
+              brs;
+        }
+  | Lam (ty, tr) -> Lam (subst' n newtr ty, subst' (n + 1) newtr tr)
+  | Fix (ty1, ty2, tr) ->
+      Fix (subst' n newtr ty1, subst' (n + 1) newtr ty2, subst' (n + 2) newtr tr)
+  | Prod (ty, tr) -> Prod (subst' n newtr ty, subst' (n + 1) newtr tr)
+  | tr -> tr
+
 (* de Bruijn indexで0を指す項をすべてnewtrに置換する。*)
-let subst (newtr : term) (tr : term) =
-  let rec aux n = function
-    | Var i when i = n -> shift_term 0 (i + 1) newtr
-    | App (tr1, tr2) -> App (aux n tr1, aux n tr2)
-    | Match { tr; in_ty; in_nvars; ret_ty; brs } ->
-        Match
-          {
-            tr = aux n tr;
-            in_ty;
-            in_nvars;
-            ret_ty = aux (n + 1 + in_nvars) ret_ty;
-            brs =
-              List.map
-                (fun (ctor, nvars, br) -> (ctor, nvars, aux (n + nvars) br))
-                brs;
-          }
-    | Lam (ty, tr) -> Lam (aux n ty, aux (n + 1) tr)
-    | Fix (ty1, ty2, tr) -> Fix (aux n ty1, aux (n + 1) ty2, aux (n + 2) tr)
-    | Prod (ty, tr) -> Prod (aux n ty, aux (n + 1) tr)
-    | tr -> tr
-  in
-  shift_term 0 (-1) @@ aux 0 tr
+let subst (newtr : term) (tr : term) = shift_term 0 (-1) @@ subst' 0 newtr tr
 
 (* ` | ctor x1 x2 ... xnvars ` というパターンに入力項をマッチさせ、置換後の結果を返す。 *)
 let rec match_pattern ctor nvars br tr =
-  let rec aux i br = function
+  (*
+    match (pair x y) with
+    | pair x' y' -> y'
+
+    ||
+    ||
+
+                                1  0 i
+    ((fun x' -> (fun y' -> y')) x) y
+                           br    tr
+  *)
+  let rec aux i = function
     | GVar id when ctor = id && i = nvars -> Some br
-    | App (tr1, tr2) -> aux (i + 1) (subst tr2 br) tr1
+    | App (tr1, tr2) ->
+        let* br = aux (i + 1) tr1 in
+        Some (shift_term i (-1) @@ subst' i tr2 br)
     | _ -> None
   in
-  aux 0 br tr
+  aux 0 tr
 
 (* 引数で与えられた項を正規形まで完全β簡約する。 *)
 and reduce_full (g : global) (e : local) = function
