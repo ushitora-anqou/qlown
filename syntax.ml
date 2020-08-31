@@ -3,7 +3,7 @@ type exp =
   | Univ of int
   | Prod of string option * exp_with_loc * exp_with_loc
   | Lam of string * exp_with_loc * exp_with_loc
-  | Fix of string * string * exp_with_loc * exp_with_loc * exp_with_loc
+  | Fix of string * (string * exp_with_loc) list * exp_with_loc * exp_with_loc
   | App of exp_with_loc * exp_with_loc
   | Match of {
       (* match tr as x in ty y1 .. yn return ret_ty with | ctor x1 .. xm -> t *)

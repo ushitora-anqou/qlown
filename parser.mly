@@ -49,9 +49,12 @@ FunExpr:
   }
 
 FixExpr:
-  | FIX funname=ID LPAREN id=ID COLON ty1=Expr RPAREN COLON ty2=AppExpr RARROW tr=Expr {
-      { e=Fix (funname, id, ty1, ty2, tr); l=$symbolstartpos }
+  | FIX funname=ID tys=nonempty_list(FixArg) COLON ty2=AppExpr RARROW tr=Expr {
+      { e=Fix (funname, tys, ty2, tr); l=$symbolstartpos }
   }
+
+FixArg:
+  | LPAREN id=ID COLON ty=Expr RPAREN { (id, ty) }
 
 MatchExpr:
   | MATCH tr=Expr AS x=ID IN in_ty=ID in_vars=list(ID) RETURN ret_ty=Expr WITH brs=list(MatchBranch) {

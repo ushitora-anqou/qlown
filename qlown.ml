@@ -1,6 +1,6 @@
 module HashMap = Map.Make (String)
 
-let debugging__now = false
+let debugging__now = true
 
 (* Monad syntax for options.
    Thanks to: https://jobjo.github.io/2019/04/24/ocaml-has-some-new-shiny-syntax.html *)
@@ -11,6 +11,16 @@ let ( let* ) x f = bind x f
 (* Usage: let* _ = ok @@ expr in ...
    Return None if expr is false. *)
 let ok (b : bool) = if b then Some true else None
+
+let mapi f l =
+  let rec aux i = function [] -> [] | h :: t -> f i h :: aux (i + 1) t in
+  aux 0 l
+
+let fold_lefti f a l =
+  let rec aux i a = function [] -> a | h :: t -> aux (i + 1) (f i a h) t in
+  aux 0 a l
+
+exception Unreachable
 
 (* デバッグ情報を出力するための関数。 *)
 let print_debug () =
@@ -32,7 +42,7 @@ type term =
       brs : (string * int * term) list;
     }
   | Lam of typ * term (* ラムダ式 (fun 0 : T -> f) *)
-  | Fix of typ * typ * term (* 再帰関数式 (fix 1 (0 : T) : (S) -> f *)
+  | Fix of typ list * typ * term (* 再帰関数式 (fix n (n-1 : Tn-1) ... (0 : T0) : S -> f *)
   | Prod of typ * term (* 関数型 (forall 0 : T, S) *)
   | Univ of int
 
@@ -56,35 +66,37 @@ type ctor_map = ctor_info HashMap.t
 
 let get_ctor_info (db : ctor_map) (id : string) = HashMap.find id db
 
-let rec string_of_term = function
-  | Var i -> Printf.sprintf "(Var %d)" i
-  | GVar id -> Printf.sprintf "(GVar %s)" id
-  | App (l, r) -> Printf.sprintf "(%s %s)" (string_of_term l) (string_of_term r)
+let rec string_of_term tr =
+  let open Printf in
+  match tr with
+  | Var i -> sprintf "(Var %d)" i
+  | GVar id -> sprintf "(GVar %s)" id
+  | App (l, r) -> sprintf "(%s %s)" (string_of_term l) (string_of_term r)
   | Match { tr; in_ty; in_nvars; ret_ty; brs } ->
-      Printf.sprintf "(match %s as (Var %d) in %s %sreturn %s with %s)"
+      sprintf "(match %s as (Var %d) in %s %sreturn %s with %s)"
         (string_of_term tr) in_nvars in_ty
         ( if in_nvars = 0 then ""
         else if in_nvars = 1 then "(Var 0) "
-        else Printf.sprintf "(Var %d)..(Var %d) " (in_nvars - 1) 0 )
+        else sprintf "(Var %d)..(Var %d) " (in_nvars - 1) 0 )
         (string_of_term ret_ty)
         ( String.concat " | "
         @@ List.map
              (fun (ctor, nvars, br) ->
-               Printf.sprintf "%s %s-> %s" ctor
+               sprintf "%s %s-> %s" ctor
                  ( if nvars = 0 then ""
                  else if nvars = 1 then "(Var 0) "
-                 else Printf.sprintf "(Var %d)..(Var %d) " (nvars - 1) 0 )
+                 else sprintf "(Var %d)..(Var %d) " (nvars - 1) 0 )
                  (string_of_term br))
              brs )
   | Lam (ty, tr) ->
-      Printf.sprintf "(fun 0 : %s -> %s)" (string_of_term ty)
-        (string_of_term tr)
-  | Fix (ty1, ty2, tr) ->
-      Printf.sprintf "(fix 1 (0 : %s) : %s -> %s)" (string_of_term ty1)
+      sprintf "(fun 0 : %s -> %s)" (string_of_term ty) (string_of_term tr)
+  | Fix (tys, ty2, tr) ->
+      sprintf "(fix _ %s : %s -> %s)"
+        (String.concat " " @@ List.map string_of_term tys)
         (string_of_term ty2) (string_of_term tr)
   | Prod (ty, tr) ->
-      Printf.sprintf "((0 : %s) -> %s)" (string_of_term ty) (string_of_term tr)
-  | Univ i -> Printf.sprintf "(Univ %d)" i
+      sprintf "((0 : %s) -> %s)" (string_of_term ty) (string_of_term tr)
+  | Univ i -> sprintf "(Univ %d)" i
 
 let rec string_of_local = function
   | [] -> "[]"
@@ -112,8 +124,12 @@ let rec shift_term (n : int) (d : int) = function
               brs;
         }
   | Lam (ty, tr) -> Lam (shift_term n d ty, shift_term (n + 1) d tr)
-  | Fix (ty1, ty2, tr) ->
-      Fix (shift_term n d ty1, shift_term (n + 1) d ty2, shift_term (n + 2) d tr)
+  | Fix (tys, ty2, tr) ->
+      let nvars = List.length tys in
+      Fix
+        ( mapi (fun i ty1 -> shift_term (n + i) d ty1) tys,
+          shift_term (n + nvars) d ty2,
+          shift_term (n + nvars + 1) d tr )
   | Prod (ty, tr) -> Prod (shift_term n d ty, shift_term (n + 1) d tr)
   | tr -> tr
 
@@ -137,8 +153,12 @@ let rec subst' n newtr = function
               brs;
         }
   | Lam (ty, tr) -> Lam (subst' n newtr ty, subst' (n + 1) newtr tr)
-  | Fix (ty1, ty2, tr) ->
-      Fix (subst' n newtr ty1, subst' (n + 1) newtr ty2, subst' (n + 2) newtr tr)
+  | Fix (tys, ty2, tr) ->
+      let nvars = List.length tys in
+      Fix
+        ( mapi (fun i ty1 -> subst' (n + i) newtr ty1) tys,
+          subst' (n + nvars) newtr ty2,
+          subst' (n + nvars + 1) newtr tr )
   | Prod (ty, tr) -> Prod (subst' n newtr ty, subst' (n + 1) newtr tr)
   | tr -> tr
 
@@ -181,20 +201,20 @@ and reduce_full (g : global) (e : local) = function
       let a' = reduce_full g e a in
       match reduce_full g e f with
       | Lam (_, tr) -> reduce_full g e @@ subst a' tr
-      | Fix (ty1, ty2, tr) as fix ->
+      | Fix (tys, _, tr) as fix ->
           (* 簡約は必ずとまると仮定する。 *)
-          (* fix (0:ty1) : ty2 -> tr = fun 1:(ty1 -> ty2) -> fun 0:ty1 -> tr *)
+          (* fix (:Tnvar-1) (:Tnvar-2) .. (:T0) : ty2 -> tr
+             = fun :(Tnvar-1 -> Tnvar-2 -> ... -> T0 -> ty2) ->
+                 fun :Tnvar-1 -> fun :Tnvar-2 -> ... -> fun :T0 -> tr *)
+          let tr' = List.fold_right (fun ty1 tr -> Lam (ty1, tr)) tys tr in
           let tr' =
-            match subst fix (Lam (ty1, tr)) with
+            match subst fix tr' with
             | Lam (_, tr') -> tr'
-            | _ -> failwith "unreachable"
+            | _ -> raise Unreachable
           in
-          let tr' = subst a' tr' in
-          let tr' = reduce_full g e tr' in
+          let tr' = reduce_full g e @@ subst a' tr' in
           print_debug () "a':  %s\n" @@ string_of_term a';
           print_debug () "fix: %s\n" @@ string_of_term fix;
-          print_debug () "ty1: %s\n" @@ string_of_term ty1;
-          print_debug () "ty2: %s\n" @@ string_of_term ty2;
           print_debug () "tr:  %s\n" @@ string_of_term tr;
           print_debug () "---> %s\n" @@ string_of_term tr';
           tr'
@@ -221,13 +241,22 @@ and reduce_full (g : global) (e : local) = function
       let ty' = reduce_full g e ty in
       let tr' = reduce_full g (Decl ty' :: e) tr in
       Lam (ty', tr')
-  | Fix (ty1, ty2, tr) ->
-      let ty1 = reduce_full g e ty1 in
-      let e' = Decl ty1 :: e in
+  | Fix (tys, ty2, tr) ->
+      let e', tys =
+        List.fold_left
+          (fun (e, tys) ty1 -> (Decl ty1 :: e, reduce_full g e ty1 :: tys))
+          (e, []) tys
+      in
       let ty2 = reduce_full g e' ty2 in
-      let e = Decl ty1 :: Decl (Prod (ty1, ty2)) :: e in
+      let tys_prod =
+        let rec aux = function [] -> ty2 | h :: t -> Prod (h, aux t) in
+        aux tys
+      in
+      let e =
+        List.fold_left (fun e ty1 -> Decl ty1 :: e) (Decl tys_prod :: e) tys
+      in
       let tr = reduce_full g e tr in
-      Fix (ty1, ty2, tr)
+      Fix (tys, ty2, tr)
   | Prod (ty, tr) ->
       let ty' = reduce_full g e ty in
       let tr' = reduce_full g (Decl ty' :: e) tr in
@@ -272,8 +301,9 @@ and check_type (ctordb : ctor_map) (g : global) (e : local) (tr : term)
                    ctor = ctor' && nvars = nvars' && aux br br')
                  brs brs'
         | Lam (ty, tr), Lam (ty', tr') -> aux ty ty' && aux tr tr'
-        | Fix (ty1, ty2, tr), Fix (ty1', ty2', tr') ->
-            aux ty1 ty1' && aux ty2 ty2' && aux tr tr'
+        | Fix (tys, ty2, tr), Fix (tys', ty2', tr') ->
+            List.for_all2 (fun ty1 ty1' -> aux ty1 ty1') tys tys'
+            && aux ty2 ty2' && aux tr tr'
         | Prod (ty, tr), Prod (ty', tr') -> aux ty ty' && aux tr tr'
         | Univ i, Univ j -> i <= j (* Univ i implies Univ j if i <= j *)
         | _, Univ j -> (
@@ -304,15 +334,27 @@ and typeof (ctordb : ctor_info HashMap.t) (g : global) (e : local) (tr : term) =
         match typeof ctordb g (Decl ty :: e) tr with
         | Some tytr -> Some (Prod (ty, tytr))
         | None -> None )
-  | Fix (ty1, ty2, tr) ->
+  | Fix (tys, ty2, tr) ->
       (* FIXME: Check if tr will stop *)
-      if not (assert_type ctordb g e ty1) then None
-      else if not (assert_type ctordb g (Decl ty1 :: e) ty2) then None
-      else if
-        check_type ctordb g
-          (Decl ty1 :: Decl (Prod (ty1, ty2)) :: e)
-          tr (shift_term 1 1 ty2)
-      then Some (Prod (ty1, ty2))
+      (* Check if tys are actually types and get local environemnt for ty2 *)
+      let rec aux e = function
+        | [] -> Some e
+        | ty1 :: t when assert_type ctordb g e ty1 -> aux (Decl ty1 :: e) t
+        | _ -> None
+      in
+      let* e' = aux e tys in
+      (* Check if ty2 is actually a type *)
+      let* _ = ok (assert_type ctordb g e' ty2) in
+      (* Type-check tr *)
+      let tys_prod =
+        let rec aux = function [] -> ty2 | h :: t -> Prod (h, aux t) in
+        aux tys
+      in
+      let e =
+        List.fold_left (fun e ty1 -> Decl ty1 :: e) (Decl tys_prod :: e) tys
+      in
+      if check_type ctordb g e tr (shift_term (List.length tys) 1 ty2) then
+        Some tys_prod
       else None
   | Prod (ty, tr) -> (
       match
@@ -458,17 +500,26 @@ let conv g tr =
         Prod (aux e d ty, aux e (d + 1) tr)
     | Syntax.Lam (x, { e = ty; _ }, { e = tr; _ }) ->
         Lam (aux e d ty, aux (HashMap.add x d e) (d + 1) tr)
-    | Syntax.Fix (funname, x, { e = ty1; _ }, { e = ty2; _ }, { e = tr; _ }) ->
-        (* fix funname (x : ty1) : ty2 -> tr
-            = fun funname : (x:ty1 -> ty2) -> fun x:ty1 -> tr *)
-        let ty1 = aux e d ty1 in
-        let e' = HashMap.add x d e in
-        let ty2 = aux e' (d + 1) ty2 in
+    | Syntax.Fix (funname, tys, { e = ty2; _ }, { e = tr; _ }) ->
+        (* fix funname (x1:T1) (x2:T2) .. (xn:Tn) : ty2 -> tr *)
+        let tys =
+          List.map (fun ((x, e) : string * Syntax.exp_with_loc) -> (x, e.e)) tys
+        in
+        let rec aux' i e = function
+          | [] -> (e, [])
+          | (x, ty) :: t ->
+              let ty = aux e (d + i) ty in
+              let e, tys = aux' (i + 1) (HashMap.add x (d + i) e) t in
+              (e, ty :: tys)
+        in
+        let e', tys' = aux' 0 e tys in
+        let ty2 = aux e' (d + List.length tys') ty2 in
         let e = HashMap.add funname d e in
-        let e = HashMap.add x (d + 1) e in
-        let tr = aux e (d + 2) tr in
-        let fix = Fix (ty1, ty2, tr) in
-        fix
+        let e =
+          fold_lefti (fun i e (x, _) -> HashMap.add x (d + 1 + i) e) e tys
+        in
+        let tr = aux e (d + 1 + List.length tys') tr in
+        Fix (tys', ty2, tr)
     | Syntax.Univ index -> Univ index
   in
   aux HashMap.empty 0 tr
