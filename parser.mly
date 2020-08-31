@@ -45,15 +45,18 @@ ArrowType:
 
 FunExpr:
   | FUN id=ID COLON ty=AppExpr RARROW tr=Expr {
-      { e=Lam (id, ty, tr); l=$symbolstartpos }
+      { e=Lam ([(id, ty)], tr); l=$symbolstartpos }
+  }
+  | FUN tys=nonempty_list(FunArg) RARROW tr=Expr {
+      { e=Lam (tys, tr); l=$symbolstartpos }
   }
 
 FixExpr:
-  | FIX funname=ID tys=nonempty_list(FixArg) COLON ty2=AppExpr RARROW tr=Expr {
+  | FIX funname=ID tys=nonempty_list(FunArg) COLON ty2=AppExpr RARROW tr=Expr {
       { e=Fix (funname, tys, ty2, tr); l=$symbolstartpos }
   }
 
-FixArg:
+FunArg:
   | LPAREN id=ID COLON ty=Expr RPAREN { (id, ty) }
 
 MatchExpr:

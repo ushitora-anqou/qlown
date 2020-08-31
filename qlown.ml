@@ -498,8 +498,9 @@ let conv g tr =
         Prod (aux e d ty, aux (HashMap.add x d e) (d + 1) tr)
     | Syntax.Prod (None, { e = ty; _ }, { e = tr; _ }) ->
         Prod (aux e d ty, aux e (d + 1) tr)
-    | Syntax.Lam (x, { e = ty; _ }, { e = tr; _ }) ->
-        Lam (aux e d ty, aux (HashMap.add x d e) (d + 1) tr)
+    | Syntax.Lam ([], { e = tr; _ }) -> aux e d tr
+    | Syntax.Lam ((x, { e = ty; _ }) :: t, tr) ->
+        Lam (aux e d ty, aux (HashMap.add x d e) (d + 1) (Syntax.Lam (t, tr)))
     | Syntax.Fix (funname, tys, { e = ty2; _ }, { e = tr; _ }) ->
         (* fix funname (x1:T1) (x2:T2) .. (xn:Tn) : ty2 -> tr *)
         let tys =
