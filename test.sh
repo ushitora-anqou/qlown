@@ -11,7 +11,7 @@ function fail() {
 
 function test_positive() {
     res=$(echo "$1" | env OCAMLRUNPARAM=b $QLOWN 2>&1)
-    if ( echo "$res" | grep -i "error" > /dev/null ); then
+    if [ $? -ne 0 ]; then
         echo "$res"
         fail "$1"
     fi
