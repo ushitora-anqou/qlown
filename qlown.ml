@@ -52,8 +52,6 @@ type binding = Decl of typ | Def of typ * term
 
 type local = binding list
 
-type global = binding HashMap.t
-
 type ctor_info = {
   (* Assume  | ctor : (x1:A1) -> ... -> (xm:Am) -> ty u1 u2 .. un *)
   (* m *) nvars : int;
@@ -62,9 +60,13 @@ type ctor_info = {
   (* [u1; u2; .. ; un] *) ty_args : term list;
 }
 
-type ctor_map = ctor_info HashMap.t
+type world = { g : binding HashMap.t; ctor_map : ctor_info HashMap.t }
 
-let get_ctor_info (db : ctor_map) (id : string) = HashMap.find id db
+let empty_world = { g = HashMap.empty; ctor_map = HashMap.empty }
+
+let find_ctor_info (w : world) (id : string) = HashMap.find id w.ctor_map
+
+let find_gvar (w : world) (id : string) = HashMap.find id w.g
 
 let rec string_of_term tr =
   let open Printf in
@@ -188,19 +190,20 @@ let rec match_pattern ctor nvars br tr =
   aux 0 tr
 
 (* 引数で与えられた項を正規形まで完全β簡約する。 *)
-and reduce_full (g : global) (e : local) = function
+and reduce_full (w : world) (e : local) (tr : term) =
+  match tr with
   | Var i -> (
       match List.nth e i with
       | Decl _ -> Var i
-      | Def (_, tr) -> reduce_full g e @@ shift_term 0 (i + 1) tr )
+      | Def (_, tr) -> reduce_full w e @@ shift_term 0 (i + 1) tr )
   | GVar id -> (
-      match HashMap.find id g with
+      match find_gvar w id with
       | Decl _ -> GVar id
-      | Def (_, tr) -> reduce_full g e tr )
+      | Def (_, tr) -> reduce_full w e tr )
   | App (f, a) -> (
-      let a' = reduce_full g e a in
-      match reduce_full g e f with
-      | Lam (_, tr) -> reduce_full g e @@ subst a' tr
+      let a' = reduce_full w e a in
+      match reduce_full w e f with
+      | Lam (_, tr) -> reduce_full w e @@ subst a' tr
       | Fix (tys, _, tr) as fix ->
           (* 簡約は必ずとまると仮定する。 *)
           (* fix (:Tnvar-1) (:Tnvar-2) .. (:T0) : ty2 -> tr
@@ -212,7 +215,7 @@ and reduce_full (g : global) (e : local) = function
             | Lam (_, tr') -> tr'
             | _ -> raise Unreachable
           in
-          let tr' = reduce_full g e @@ subst a' tr' in
+          let tr' = reduce_full w e @@ subst a' tr' in
           print_debug () "a':  %s\n" @@ string_of_term a';
           print_debug () "fix: %s\n" @@ string_of_term fix;
           print_debug () "tr:  %s\n" @@ string_of_term tr;
@@ -221,7 +224,7 @@ and reduce_full (g : global) (e : local) = function
       | f' -> App (f', a') )
   | Match ({ tr; brs; _ } as body) ->
       (* FIXME: Check if pattern match is exausitve. *)
-      let tr = reduce_full g e tr in
+      let tr = reduce_full w e tr in
       (* Note that we can safely ignore `as ... in ... return ...`. *)
       (* Find matching branch and run it *)
       let rec aux = function
@@ -234,20 +237,20 @@ and reduce_full (g : global) (e : local) = function
             | None -> aux brs
             | Some br ->
                 (* Branch found *)
-                reduce_full g e br )
+                reduce_full w e br )
       in
       aux brs
   | Lam (ty, tr) ->
-      let ty' = reduce_full g e ty in
-      let tr' = reduce_full g (Decl ty' :: e) tr in
+      let ty' = reduce_full w e ty in
+      let tr' = reduce_full w (Decl ty' :: e) tr in
       Lam (ty', tr')
   | Fix (tys, ty2, tr) ->
       let e', tys =
         List.fold_left
-          (fun (e, tys) ty1 -> (Decl ty1 :: e, reduce_full g e ty1 :: tys))
+          (fun (e, tys) ty1 -> (Decl ty1 :: e, reduce_full w e ty1 :: tys))
           (e, []) tys
       in
-      let ty2 = reduce_full g e' ty2 in
+      let ty2 = reduce_full w e' ty2 in
       let tys_prod =
         let rec aux = function [] -> ty2 | h :: t -> Prod (h, aux t) in
         aux tys
@@ -255,26 +258,25 @@ and reduce_full (g : global) (e : local) = function
       let e =
         List.fold_left (fun e ty1 -> Decl ty1 :: e) (Decl tys_prod :: e) tys
       in
-      let tr = reduce_full g e tr in
+      let tr = reduce_full w e tr in
       Fix (tys, ty2, tr)
   | Prod (ty, tr) ->
-      let ty' = reduce_full g e ty in
-      let tr' = reduce_full g (Decl ty' :: e) tr in
+      let ty' = reduce_full w e ty in
+      let tr' = reduce_full w (Decl ty' :: e) tr in
       Prod (ty', tr')
   | tr -> tr
 
 (* ある文脈eのもとで、項trが型tyを持つかを返す（型検査を行う）。 *)
-and check_type (ctordb : ctor_map) (g : global) (e : local) (tr : term)
-    (ty : typ) : bool =
-  match typeof ctordb g e tr with
+and check_type (w : world) (e : local) (tr : term) (ty : typ) : bool =
+  match typeof w e tr with
   | None ->
       print_debug () "CHECK TYPE typeof(tr) failed\n";
       print_debug () "\ttr: %s\n" @@ string_of_term tr;
       print_debug () "\tty: %s\n" @@ string_of_term ty;
       false
   | Some ty' ->
-      let ty' = reduce_full g e ty' in
-      let ty = reduce_full g e ty in
+      let ty' = reduce_full w e ty' in
+      let ty = reduce_full w e ty in
       print_debug () "CHECK TYPE\n";
       print_debug () "\ttr: %s :\n\t    %s\n" (string_of_term tr)
         (string_of_term ty');
@@ -307,7 +309,7 @@ and check_type (ctordb : ctor_map) (g : global) (e : local) (tr : term)
         | Prod (ty, tr), Prod (ty', tr') -> aux ty ty' && aux tr tr'
         | Univ i, Univ j -> i <= j (* Univ i implies Univ j if i <= j *)
         | _, Univ j -> (
-            match typeof_type ctordb g e ty' with
+            match typeof_type w e ty' with
             | None -> failwith "fatal: unreachable"
             | Some i -> i <= j )
         | _ -> false
@@ -318,7 +320,7 @@ and check_type (ctordb : ctor_map) (g : global) (e : local) (tr : term)
       r
 
 (* ある環境eのもとでの項trの型を返す。*)
-and typeof (ctordb : ctor_info HashMap.t) (g : global) (e : local) (tr : term) =
+and typeof (w : world) (e : local) (tr : term) =
   print_debug () "TYPEOF tr: %s\n" @@ string_of_term tr;
   print_debug () "       e:  %s\n" @@ string_of_local e;
   match tr with
@@ -327,11 +329,11 @@ and typeof (ctordb : ctor_info HashMap.t) (g : global) (e : local) (tr : term) =
         (shift_term 0 (i + 1)
            (match List.nth e i with Decl ty -> ty | Def (ty, _) -> ty))
   | GVar id ->
-      Some (match HashMap.find id g with Decl ty -> ty | Def (ty, _) -> ty)
+      Some (match find_gvar w id with Decl ty -> ty | Def (ty, _) -> ty)
   | Lam (ty, tr) -> (
-      if not (assert_type ctordb g e ty) then None
+      if not (assert_type w e ty) then None
       else
-        match typeof ctordb g (Decl ty :: e) tr with
+        match typeof w (Decl ty :: e) tr with
         | Some tytr -> Some (Prod (ty, tytr))
         | None -> None )
   | Fix (tys, ty2, tr) ->
@@ -339,12 +341,12 @@ and typeof (ctordb : ctor_info HashMap.t) (g : global) (e : local) (tr : term) =
       (* Check if tys are actually types and get local environemnt for ty2 *)
       let rec aux e = function
         | [] -> Some e
-        | ty1 :: t when assert_type ctordb g e ty1 -> aux (Decl ty1 :: e) t
+        | ty1 :: t when assert_type w e ty1 -> aux (Decl ty1 :: e) t
         | _ -> None
       in
       let* e' = aux e tys in
       (* Check if ty2 is actually a type *)
-      let* _ = ok (assert_type ctordb g e' ty2) in
+      let* _ = ok (assert_type w e' ty2) in
       (* Type-check tr *)
       let tys_prod =
         let rec aux = function [] -> ty2 | h :: t -> Prod (h, aux t) in
@@ -353,18 +355,16 @@ and typeof (ctordb : ctor_info HashMap.t) (g : global) (e : local) (tr : term) =
       let e =
         List.fold_left (fun e ty1 -> Decl ty1 :: e) (Decl tys_prod :: e) tys
       in
-      if check_type ctordb g e tr (shift_term (List.length tys) 1 ty2) then
+      if check_type w e tr (shift_term (List.length tys) 1 ty2) then
         Some tys_prod
       else None
   | Prod (ty, tr) -> (
-      match
-        (typeof_type ctordb g e ty, typeof_type ctordb g (Decl ty :: e) tr)
-      with
+      match (typeof_type w e ty, typeof_type w (Decl ty :: e) tr) with
       | Some uty, Some utr -> Some (Univ (max uty utr))
       | _ -> None )
   | App (f, a) -> (
-      match typeof ctordb g e f with
-      | Some (Prod (ty, tr)) when check_type ctordb g e a ty ->
+      match typeof w e f with
+      | Some (Prod (ty, tr)) when check_type w e a ty ->
           (* 依存型に対応するためaの値をtrに代入する *)
           print_debug () "\tty  %s\n" @@ string_of_term ty;
           print_debug () "\ttr  %s\n" @@ string_of_term tr;
@@ -374,20 +374,22 @@ and typeof (ctordb : ctor_info HashMap.t) (g : global) (e : local) (tr : term) =
   | Univ i -> Some (Univ (i + 1))
   | Match { tr; in_ty; in_nvars; ret_ty; brs } ->
       (* Check if typeof(tr) : ty t1 t2 .. tn and bind ts*)
+      let* typ = typeof w e tr in
       let rec aux ts = function
         | GVar in_ty' when in_ty = in_ty' -> Some ts
         | App (tr1, tr2) -> aux (tr2 :: ts) tr1
         | _ -> None
       in
-      let* typ = typeof ctordb g e tr in
       let* ts = aux [] typ in
       let* _ = ok (in_nvars = List.length ts) in
+      (* FIXME: Check if ret_ty is actually a type *)
+      (* Check constructors are ok *)
       if
         (* Now check if for all branch (| ctor x1 .. xm -> br),
            typeof(br) : [x->ctor x1 x2 .. xm][y1->u1][y2->u2]...[yn->un]ret_ty *)
         List.for_all
           (fun (ctor, nvars, br) ->
-            let info = get_ctor_info ctordb ctor in
+            let info = find_ctor_info w ctor in
             assert (in_ty = info.ty_name);
             assert (nvars = info.nvars);
             (* Get expected type of br *)
@@ -421,7 +423,7 @@ and typeof (ctordb : ctor_info HashMap.t) (g : global) (e : local) (tr : term) =
             in
 
             (* Check if correct *)
-            check_type ctordb g e br expected_br_ty)
+            check_type w e br expected_br_ty)
           brs
       then
         (* return [x->t][y1->t1]...[yn->tn]ret_ty *)
@@ -440,19 +442,19 @@ and typeof (ctordb : ctor_info HashMap.t) (g : global) (e : local) (tr : term) =
       else None
 
 (* 型の型を返す。*)
-and typeof_type (ctordb : ctor_map) (g : global) (e : local) (t : term) =
-  match typeof ctordb g e t with
+and typeof_type (w : world) (e : local) (t : term) =
+  match typeof w e t with
   | None -> None
-  | Some ty -> ( match reduce_full g e ty with Univ i -> Some i | _ -> None )
+  | Some ty -> ( match reduce_full w e ty with Univ i -> Some i | _ -> None )
 
 (* 引数が型であるかを返す。 *)
-and assert_type (ctordb : ctor_map) (g : global) (e : local) (t : term) =
-  match typeof_type ctordb g e t with None -> false | Some _ -> true
+and assert_type (w : world) (e : local) (t : term) =
+  match typeof_type w e t with None -> false | Some _ -> true
 
-let conv g tr =
+let conv (w : world) (tr : Syntax.exp) =
   let rec aux e d = function
     | Syntax.Var id when HashMap.mem id e -> Var (d - HashMap.find id e - 1)
-    | Syntax.Var id when HashMap.mem id g -> GVar id
+    | Syntax.Var id when HashMap.mem id w.g -> GVar id
     | Syntax.Var id -> failwith @@ Printf.sprintf "Undefined variable: %s" id
     | Syntax.App ({ e = tr1; _ }, { e = tr2; _ }) ->
         App (aux e d tr1, aux e d tr2)
@@ -525,39 +527,37 @@ let conv g tr =
   in
   aux HashMap.empty 0 tr
 
-let eval_one (lex : Lexing.lexbuf) (ctordb : ctor_map) (g : global) =
-  let add_decl_wo_verif g id ty =
-    let ty = conv g ty in
+let eval_one (lex : Lexing.lexbuf) (w : world) =
+  let add_decl_wo_verif w id ty =
+    let ty = conv w ty in
     Printf.printf "%s added (without verification)\n" id;
-    HashMap.add id (Decl ty) g
+    { w with g = HashMap.add id (Decl ty) w.g }
   in
-  let add_def_wo_verif g id ty tr =
-    let ty = conv g ty in
-    let tr = conv g tr in
+  let add_def_wo_verif w id ty tr =
+    let ty = conv w ty in
+    let tr = conv w tr in
     Printf.printf "%s added (without verification)\n" id;
-    HashMap.add id (Def (ty, tr)) g
+    { w with g = HashMap.add id (Def (ty, tr)) w.g }
   in
   match Parser.toplevel Lexer.main lex with
   | None -> None
   | Some { p = Syntax.LetDecl (id, { e = ty; _ }); _ } ->
-      Some (ctordb, add_decl_wo_verif g id ty)
+      Some (add_decl_wo_verif w id ty)
   | Some { p = Syntax.LetDef (id, { e = ty; _ }, { e = tr; _ }); _ } ->
-      let tr = conv g tr in
-      let ty = conv g ty in
-      if not (check_type ctordb g [] tr ty) then failwith "type check failed";
+      let tr = conv w tr in
+      let ty = conv w ty in
+      if not (check_type w [] tr ty) then failwith "type check failed";
       Printf.printf "%s added (VERIFIED)\n" id;
-      Some (ctordb, HashMap.add id (Def (ty, tr)) g)
+      Some { w with g = HashMap.add id (Def (ty, tr)) w.g }
   | Some { p = Syntax.AssumeLetDef (id, { e = ty; _ }, { e = tr; _ }); _ } ->
-      Some (ctordb, add_def_wo_verif g id ty tr)
+      Some (add_def_wo_verif w id ty tr)
   | Some { p = Syntax.TypeDef (ty_name, { e = typ; _ }, seq); _ } ->
       (* FIXME: Check if it satisfies positivity condition *)
-      let g = add_decl_wo_verif g ty_name typ in
+      let w = add_decl_wo_verif w ty_name typ in
       Some
         (List.fold_left
-           (fun (ctordb, g)
-                ((id, { e = typ; _ }) : string * Syntax.exp_with_loc) ->
-             let typ' = conv g typ in
-             let g = add_decl_wo_verif g id typ in
+           (fun w ((id, { e = typ; _ }) : string * Syntax.exp_with_loc) ->
+             let typ' = conv w typ in
              let info =
                {
                  nvars =
@@ -586,25 +586,21 @@ let eval_one (lex : Lexing.lexbuf) (ctordb : ctor_map) (g : global) =
                     aux1 [] (aux2 typ'));
                }
              in
-             let ctordb = HashMap.add id info ctordb in
-             (ctordb, g))
-           (ctordb, g) seq)
+             let w = add_decl_wo_verif w id typ in
+             { w with ctor_map = HashMap.add id info w.ctor_map })
+           w seq)
 
-let rec eval_all (lex : Lexing.lexbuf) (ctordb : ctor_map) (g : global) =
-  match eval_one lex ctordb g with
-  | None -> (ctordb, g)
-  | Some (ctordb, g) -> eval_all lex ctordb g
+let rec eval_all (lex : Lexing.lexbuf) (w : world) =
+  match eval_one lex w with None -> w | Some w -> eval_all lex w
 
 ;;
-let ctordb, g =
+let w =
   (* Read stdlib and get initial environment*)
   let ic = open_in "stdlib.qlown" in
   try
-    let ctordb, g =
-      eval_all (Lexing.from_channel ic) HashMap.empty HashMap.empty
-    in
+    let w = eval_all (Lexing.from_channel ic) empty_world in
     close_in ic;
-    (ctordb, g)
+    w
   with e ->
     close_in_noerr ic;
     Printf.eprintf "Fatal error: stdlib is wrong (%s)" @@ Printexc.to_string e;
@@ -614,32 +610,28 @@ in
 let lex = Lexing.from_channel stdin in
 if not (Unix.isatty Unix.stdin) then (
   try (* Reading file *)
-      eval_all lex ctordb g
+      eval_all lex w
   with e ->
     Printf.eprintf "Error: %s\n" @@ Printexc.to_string e;
     exit 1 )
 else
   (* Reading user input *)
-  let rec aux ((ctordb, g) : ctor_map * global) =
+  let rec aux w =
     print_string "# ";
     flush stdout;
     aux
     @@
-    try
-      match eval_one lex ctordb g with
-      | None -> exit 0
-      | Some (ctordb, g) -> (ctordb, g)
-    with
+    try match eval_one lex w with None -> exit 0 | Some w -> w with
     | Parser.Error ->
         let pos = Lexing.lexeme_start lex in
         Printf.printf
           "  %s\027[1m\027[31m^\027[0m\nParse.Error:%d: syntax error.\n\n"
           (String.make pos ' ') (pos + 1);
-        (ctordb, g)
+        w
     | e ->
         Printf.printf "Error: %s\n" (Printexc.to_string e);
         if Printexc.backtrace_status () then Printexc.print_backtrace stdout
         else Printf.printf "Set OCAMLRUNPARAM=b\n";
-        (ctordb, g)
+        w
   in
-  aux (ctordb, g)
+  aux w
