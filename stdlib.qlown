@@ -1,3 +1,5 @@
+type True : Univ 0 = | I : True;;
+
 type False : Univ 0 = ;;
 let False_ind : P:Univ 10 -> False -> P =
   fun P:Univ 10 -> fun x:False ->
@@ -8,38 +10,11 @@ type eq : A:Univ 10 -> A -> A -> Univ 0 =
   | eq_refl : A:Univ 10 -> x:A -> eq A x x
 ;;
 
-type nat : Univ 0 =
-  | O : nat
-  | S : nat -> nat
-;;
-
-let add : nat -> nat -> nat =
-  fix F (n : nat) : (nat -> nat) -> fun m:nat ->
-    match n as _ in nat return nat with
-    | O -> m
-    | S n' -> S (F n' m)
-;;
-
-let nat_rect : P:(nat -> Univ 10) -> P O -> (n:nat -> P n -> P (S n)) -> (n:nat -> P n) =
-  fun P:(nat -> Univ 10) -> fun forO:P O -> fun forS:(n:nat -> P n -> P (S n)) ->
-  fix F (n:nat) : P n ->
-    match n as n in nat return P n with
-    | O -> forO
-    | S n' -> forS n' (F n')
-;;
-
 let eq_subst : A:Univ 10 -> x:A -> y:A -> eq A x y ->
              P:(A -> Univ 0) -> P x -> P y =
   fun A:Univ 10 -> fun x:A -> fun y:A -> fun e:eq A x y ->
     match e as _ in eq A x y return P:(A -> Univ 0) -> P x -> P y with
     | eq_refl A x -> fun P:(A -> Univ 0) -> fun f:P x -> f
-;;
-
-let f_apply : A:Univ 10 -> B:Univ 10 -> x:A -> y:A -> eq A x y ->
-              f:(A -> B) -> eq B (f x) (f y) =
-  fun A:Univ 10 -> fun B:Univ 10 -> fun x:A -> fun y:A -> fun e:eq A x y ->
-    match e as _ in eq A x y return f:(A -> B) -> eq B (f x) (f y) with
-    | eq_refl A x -> fun f:(A -> B) -> eq_refl B (f x)
 ;;
 
 let eq_sym : A:Univ 10 -> x:A -> y:A -> eq A x y -> eq A y x =
@@ -52,6 +27,60 @@ let eq_trans : A:Univ 0 -> x:A -> y:A -> eq A x y -> z:A -> eq A y z -> eq A x z
   fun A:Univ 0 -> fun x:A -> fun y:A -> fun e1:eq A x y ->
     match e1 as _ in eq A x y return z:A -> e2:eq A y z -> eq A x z with
     | eq_refl A x -> fun z:A -> fun e2:eq A x z -> e2
+;;
+
+type bool : Univ 0 =
+  | true : bool
+  | false : bool
+;;
+
+type nat : Univ 0 =
+  | O : nat
+  | S : nat -> nat
+;;
+
+let nat_pred : nat -> nat = fun n:nat ->
+  match n as _ in nat return nat with
+  | O -> O
+  | S n' -> n'
+;;
+
+let add : nat -> nat -> nat =
+  fix F (n : nat) : (nat -> nat) -> fun m:nat ->
+    match n as _ in nat return nat with
+    | O -> m
+    | S n' -> S (F n' m)
+;;
+
+let minus : nat -> nat -> nat =
+  fix F (n:nat) : (nat -> nat) -> fun m:nat ->
+    match n as _ in nat return nat with
+    | O -> O
+    | S n' -> match m as _ in nat return nat with
+              | O -> n
+              | S m' -> F n' m'
+;;
+
+let mult : nat -> nat -> nat =
+  fix F (n:nat) : (nat -> nat) -> fun m:nat ->
+    match n as _ in nat return nat with
+    | O -> O
+    | S n' -> add m (F n' m)
+;;
+
+let nat_rect : P:(nat -> Univ 10) -> P O -> (n:nat -> P n -> P (S n)) -> (n:nat -> P n) =
+  fun P:(nat -> Univ 10) -> fun forO:P O -> fun forS:(n:nat -> P n -> P (S n)) ->
+  fix F (n:nat) : P n ->
+    match n as n in nat return P n with
+    | O -> forO
+    | S n' -> forS n' (F n')
+;;
+
+let f_apply : A:Univ 10 -> B:Univ 10 -> x:A -> y:A -> eq A x y ->
+              f:(A -> B) -> eq B (f x) (f y) =
+  fun A:Univ 10 -> fun B:Univ 10 -> fun x:A -> fun y:A -> fun e:eq A x y ->
+    match e as _ in eq A x y return f:(A -> B) -> eq B (f x) (f y) with
+    | eq_refl A x -> fun f:(A -> B) -> eq_refl B (f x)
 ;;
 
 let nat_plus_n_O : n:nat -> eq nat (add n O) n =
@@ -68,7 +97,7 @@ let nat_plus_n_Sm : n:nat -> m:nat -> eq nat (S (add n m)) (add n (S m)) =
     | S n' -> fun m:nat -> f_apply nat nat (S (add n' m)) (add n' (S m)) (F n' m) S
 ;;
 
-let nat_comm : n:nat -> m:nat -> eq nat (add n m) (add m n) =
+let nat_plus_comm : n:nat -> m:nat -> eq nat (add n m) (add m n) =
   fix F (n:nat) : (m:nat -> eq nat (add n m) (add m n)) ->
     match n as n in nat return m:nat -> eq nat (add n m) (add m n) with
     | O -> fun m:nat ->
@@ -84,4 +113,93 @@ let nat_comm : n:nat -> m:nat -> eq nat (add n m) (add m n) =
                            (S (add n' m))
                            (S (add m n')) (f_apply nat nat (add n' m) (add m n') (F n' m) S)
                            (add m (S n')) (nat_plus_n_Sm m n'))
+;;
+
+let nat_plus_assoc : n:nat -> m:nat -> p:nat ->
+                 eq nat (add n (add m p)) (add (add n m) p) =
+  fix F (n:nat) : (m:nat -> p:nat -> eq nat (add n (add m p)) (add (add n m) p)) ->
+    fun m:nat -> fun p:nat ->
+      match n as n in nat return eq nat (add n (add m p)) (add (add n m) p) with
+      | O -> eq_refl nat (add m p)
+      | S n' -> f_apply nat nat (add n' (add m p)) (add (add n' m) p) (F n' m p) S
+;;
+
+let eqb : nat -> nat -> bool =
+  fix F (n:nat) : (nat -> bool) -> fun m:nat ->
+    match n as _ in nat return bool with
+    | O -> (match m as _ in nat return bool with
+            | O -> true
+            | S m' -> false)
+    | S n' -> match m as _ in nat return bool with
+              | O -> false
+              | S m' -> F n' m'
+;;
+
+let leb : nat -> nat -> bool =
+  fix F (n:nat) : (nat -> bool) -> fun m:nat ->
+    match n as _ in nat return bool with
+    | O -> true
+    | S n' ->
+        match m as _ in nat return bool with
+        | O -> false
+        | S m' -> F n' m'
+;;
+
+type list : Univ 0 -> Univ 0 =
+| nil : X:Univ 0 -> list X
+| cons : X:Univ 0 -> x:X -> l:list X -> list X
+;;
+
+let list_repeat : X:Univ 0 -> X -> nat -> list X =
+  fix F (X:Univ 0) (x:X) (count:nat) : list X ->
+    match count as _ in nat return list X with
+    | O -> nil X
+    | S count' -> cons X x (F X x count')
+;;
+
+let list_app : X:Univ 0 -> list X -> list X -> list X =
+  fix F (X:Univ 0) (l1:list X) : (list X -> list X) ->
+    match l1 as _ in list X return list X -> list X with
+    | nil X -> fun l2:list X -> l2
+    | cons X h t -> fun l2:list X -> cons X h (F X t l2)
+;;
+
+let list_rev : X:Univ 0 -> list X -> list X =
+  fix F (X:Univ 0) (l:list X) : list X ->
+    match l as _ in list X return list X with
+    | nil X -> nil X
+    | cons X h t -> list_app X (F X t) (cons X h (nil X))
+;;
+
+let list_length : X:Univ 0 -> list X -> nat =
+  fix F (X:Univ 0) (l:list X) : nat ->
+    match l as _ in list _ return nat with
+    | nil _ -> O
+    | cons X _ l' -> S (F X l')
+;;
+
+type prod : Univ 0 -> Univ 0 -> Univ 0 =
+| pair : X:Univ 0 -> Y:Univ 0 -> x:X -> y:Y -> prod X Y
+;;
+
+let prod_fst : X:Univ 0 -> Y:Univ 0 -> p:prod X Y -> X =
+  fun (X:Univ 0) (Y:Univ 0) (p:prod X Y) ->
+    match p as _ in prod X Y return X with
+    | pair _ _ x _ -> x
+;;
+
+let prod_snd : X:Univ 0 -> Y:Univ 0 -> p:prod X Y -> Y =
+  fun (X:Univ 0) (Y:Univ 0) (p:prod X Y) ->
+    match p as _ in prod X Y return Y with
+    | pair _ _ _ y -> y
+;;
+
+type option : X:Univ 0 -> Univ 0 =
+| Some : X:Univ 0 -> X -> option X
+| None : X:Univ 0 -> option X
+;;
+
+type either : Univ 0 -> Univ 0 -> Univ 0 =
+| left : X:Univ 0 -> Y:Univ 0 -> X -> either X Y
+| right: X:Univ 0 -> Y:Univ 0 -> Y -> either X Y
 ;;
